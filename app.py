@@ -4,7 +4,6 @@ from datetime import datetime
 import pdfplumber
 import re
 import io
-import os
 
 # ==============================
 # LISTA DE CONSULTORES VÁLIDOS
@@ -28,15 +27,43 @@ CONSULTORES_VALIDOS = {
 }
 
 # ==============================
-# FUNÇÕES AUXILIARES
+# CHAVES (NOME + SOBRENOME)
+# ==============================
+CONSULTORES_CHAVES = {
+    ("ALINY", "LIMA"): "ALINY BITENCOURT DOS REIS LIMA",
+    ("TARCIO", "MARIANO"): "TARCIO HENRIQUE MARIANO DA SILVA",
+    ("ELIVALDO", "SALES"): "Elivaldo Sales Silva",
+    ("RENATO", "TAVARES"): "RENATO TAVARES",
+    ("JOSEZITO", "SILVA"): "JOSEZITO SILVA",
+    ("DAVID", "MARTINS"): "DAVID MARTINS",
+    ("TIAGO", "FERNANDES"): "TIAGO FERNANDES DE LIMA",
+    ("TARCISIO", "ANDRADE"): "TARCISIO TORRES DE ANDRADE",
+    ("MARCELO", "RIBEIRO"): "Marcelo Teles Ribeiro",
+    ("ROSEANE", "CRUZ"): "ROSEANE CRUZ",
+    ("NARDIE", "ARRUDA"): "Nardie Arruda da Silva",
+    ("FRANCISCO", "SEVERO"): "Francisco Severo Silva",
+    ("CAMILA", "AGUIAR"): "Camila Aguiar",
+    ("SERGIO", "CARVALHO"): "Sergio Carvalho",
+    ("FLAVIO", "BARBOSA"): "Flavio Rogerio de Almeida Barbosa",
+}
+
+# ==============================
+# FUNÇÕES
 # ==============================
 def normalizar_nome(nome):
-    """Normaliza nome para lista válida"""
     nome_upper = nome.upper().strip()
+
+    # 1 - tenta batida exata
     for chave, correto in CONSULTORES_VALIDOS.items():
         if chave in nome_upper:
             return correto
-    return None  # ❌ ignora nomes fora da lista
+
+    # 2 - tenta batida parcial com chaves
+    for (parte1, parte2), correto in CONSULTORES_CHAVES.items():
+        if parte1 in nome_upper and parte2 in nome_upper:
+            return correto
+
+    return None  # ❌ ignora se não achar
 
 
 def preprocess_text(text):
@@ -47,7 +74,7 @@ def preprocess_text(text):
     for line in lines:
         if buffer:
             combined = buffer + " " + line
-            if re.search(r"\d", line):  # linha tem número → fim do registro
+            if re.search(r"\d", line):
                 fixed_lines.append(combined)
                 buffer = ""
             else:
@@ -63,7 +90,6 @@ def preprocess_text(text):
 
 
 def extract_custom_pdf(file, coluna_valor):
-    """Extrai dados de um PDF, pegando apenas nomes válidos"""
     rows = []
     with pdfplumber.open(file) as pdf:
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
@@ -90,7 +116,6 @@ def extract_custom_pdf(file, coluna_valor):
 
 
 def processar_dados(df_pecas, df_servicos, ano, mes):
-    """Une peças + serviços e calcula comissão"""
     if df_pecas.empty:
         df_pecas = pd.DataFrame(columns=["Consultor", "Peças (R$)"])
     if df_servicos.empty:
@@ -113,20 +138,11 @@ def exportar(df, formato):
     buf = io.BytesIO()
     if formato == "Excel":
         df.to_excel(buf, index=False, engine="openpyxl")
-        st.download_button(
-            "⬇️ Baixar Excel",
-            buf.getvalue(),
-            "comissao.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.download_button("⬇️ Baixar Excel", buf.getvalue(), "comissao.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         buf.write(df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
-        st.download_button(
-            "⬇️ Baixar CSV",
-            buf.getvalue(),
-            "comissao.csv",
-            mime="text/csv"
-        )
+        st.download_button("⬇️ Baixar CSV", buf.getvalue(), "comissao.csv", mime="text/csv")
 
 # ==============================
 # INTERFACE STREAMLIT
