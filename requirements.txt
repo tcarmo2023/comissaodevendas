@@ -1,0 +1,10 @@
+streamlit
+pandas
+gspread
+google-auth
+openpyxl
+xlsxwriter
+xlsxwriter
+pyxlsb
+tabula-py  # opcional, só se tiver Java no ambiente
+PyPDF2
