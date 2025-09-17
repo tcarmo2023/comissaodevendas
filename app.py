@@ -7,11 +7,11 @@ import io
 import os
 
 # ==============================
-# LISTA COMPLETA DE CONSULTORES
+# LISTA COMPLETA DE CONSULTORES (NOMES CANÔNICOS)
 # ==============================
-CONSULTORES_VALIDOS = {
+CONSULTORES_CANONICOS = {
     "TIAGO FERNANDES DE LIMA": "TIAGO FERNANDES DE LIMA",
-    "TARCISIO TORRES DE ANDRADE": "TARCISIO TORRES DE ANDRADE",
+    "TARCISIO TORRES DE ANDRADE": "TARCISIO TORRES DE ANDRADE", 
     "MARCELO TELES RIBEIRO": "Marcelo Teles Ribeiro",
     "ROSEANE CRUZ": "ROSEANE CRUZ",
     "JOSEZITO SILVA": "JOSEZITO SILVA",
@@ -28,18 +28,23 @@ CONSULTORES_VALIDOS = {
     "BRUNA SILVA DE ASSIS": "BRUNA SILVA DE ASSIS",
     "ANA LEYA LIMA ALVES FROTA": "Ana Leya Lima Alves Frota",
     "FLÁVIA CAROLINA BARBOSA DA COSTA": "FLÁVIA CAROLINA BARBOSA DA COSTA",
-    "GIOVANA BRUNO DA SILVA": "Giovana Bruno da Silva",
-    "GIOVANA SILVA": "Giovana Silva",
+    "GIOVANA BRUNO DA SILVA": "GIOVANA BRUNO DA SILVA",  # Nome canônico para Giovana
+    "GIOVANA SILVA": "GIOVANA BRUNO DA SILVA",  # Mapeia para o nome canônico
     "ISABELLE SOUZA": "Isabelle Souza",
     "GRAZIELA SILVA DOS SANTOS GALDINO": "GRAZIELA SILVA DOS SANTOS GALDINO"
 }
 
 # ==============================
-# CHAVES: PRIMEIRO + SEGUNDO NOME
+# MAPEAMENTO DE NOMES VARIANTES PARA CANÔNICOS
 # ==============================
-CONSULTORES_CHAVES = {
+NOMES_VARIANTES = {
+    "GIOVANA SILVA": "GIOVANA BRUNO DA SILVA",
+    "GIOVANA BRUNO": "GIOVANA BRUNO DA SILVA",
+    "GIOVANA BRUNO DA SILVA": "GIOVANA BRUNO DA SILVA",
     "ALINY BITENCOURT": "ALINY BITENCOURT DOS REIS LIMA",
+    "ALINY BITENCOURT DOS REIS": "ALINY BITENCOURT DOS REIS LIMA",
     "TARCIO HENRIQUE": "TARCIO HENRIQUE MARIANO DA SILVA",
+    "TARCIO MARIANO": "TARCIO HENRIQUE MARIANO DA SILVA",
     "ELIVALDO SALES": "Elivaldo Sales Silva",
     "RENATO TAVARES": "RENATO TAVARES",
     "JOSEZITO SILVA": "JOSEZITO SILVA",
@@ -56,8 +61,6 @@ CONSULTORES_CHAVES = {
     "BRUNA SILVA": "BRUNA SILVA DE ASSIS",
     "ANA LEYA": "Ana Leya Lima Alves Frota",
     "FLÁVIA CAROLINA": "FLÁVIA CAROLINA BARBOSA DA COSTA",
-    "GIOVANA BRUNO": "Giovana Bruno da Silva",
-    "GIOVANA SILVA": "Giovana Silva",
     "ISABELLE SOUZA": "Isabelle Souza",
     "GRAZIELA SILVA": "GRAZIELA SILVA DOS SANTOS GALDINO"
 }
@@ -67,21 +70,26 @@ CONSULTORES_CHAVES = {
 # ==============================
 def normalizar_nome(nome):
     nome_upper = nome.upper().strip()
-
-    # 1 - tenta batida exata
-    for chave, correto in CONSULTORES_VALIDOS.items():
+    
+    # 1 - Verifica se é um nome variante conhecido
+    for variante, canonico in NOMES_VARIANTES.items():
+        if variante in nome_upper:
+            return CONSULTORES_CANONICOS.get(canonico, canonico)
+    
+    # 2 - Tenta batida exata com nomes canônicos
+    for chave, correto in CONSULTORES_CANONICOS.items():
         if chave in nome_upper:
             return correto
-
-    # 2 - tenta batida por primeiro + segundo nome
+    
+    # 3 - Tenta por primeiro + segundo nome
     partes = nome_upper.split()
     if len(partes) >= 2:
         chave = f"{partes[0]} {partes[1]}"
-        if chave in CONSULTORES_CHAVES:
-            return CONSULTORES_CHAVES[chave]
-
-    return None  # ignora se não achar
-
+        if chave in NOMES_VARIANTES:
+            canonico = NOMES_VARIANTES[chave]
+            return CONSULTORES_CANONICOS.get(canonico, canonico)
+    
+    return None
 
 def extract_pecas_pdf(file):
     """Extrai dados do PDF de peças"""
@@ -92,8 +100,8 @@ def extract_pecas_pdf(file):
             if text:
                 lines = text.split('\n')
                 for line in lines:
-                    # Procura por padrão: Nome + R$ valor + % rentabilidade
-                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,\.]+", line)
+                    # Padrão mais flexível para peças
+                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)(?:\s*\%\s*[\d\-\,\.]+)?", line)
                     if match:
                         nome = normalizar_nome(match.group(1).strip())
                         if nome:
@@ -103,6 +111,18 @@ def extract_pecas_pdf(file):
                                 rows.append({"Consultor": nome, "Peças (R$)": valor})
                             except:
                                 continue
+                    # Tenta padrão alternativo sem o símbolo R$
+                    else:
+                        match = re.search(r"(.+?)\s+([\d\.\,]+)\s+\%", line)
+                        if match:
+                            nome = normalizar_nome(match.group(1).strip())
+                            if nome:
+                                valor = match.group(2).replace(".", "").replace(",", ".")
+                                try:
+                                    valor = float(valor)
+                                    rows.append({"Consultor": nome, "Peças (R$)": valor})
+                                except:
+                                    continue
     
     if rows:
         df = pd.DataFrame(rows)
@@ -110,7 +130,6 @@ def extract_pecas_pdf(file):
         return df
     
     return pd.DataFrame(columns=["Consultor", "Peças (R$)"])
-
 
 def extract_servicos_pdf(file):
     """Extrai dados do PDF de serviços"""
@@ -121,15 +140,16 @@ def extract_servicos_pdf(file):
             if text:
                 lines = text.split('\n')
                 for line in lines:
-                    # Procura por padrão: Nome + valor numérico (pode ter vírgula) + quantidade
-                    match = re.search(r"(.+?)\s+([\d\.\,]+)\s+\d+", line)
+                    # Padrão mais flexível para serviços
+                    match = re.search(r"(.+?)\s+([\d\.\,]+)(?:\s+\d+)?", line)
                     if match:
                         nome = normalizar_nome(match.group(1).strip())
                         if nome:
                             valor = match.group(2).replace(".", "").replace(",", ".")
                             try:
                                 valor = float(valor)
-                                rows.append({"Consultor": nome, "Serviços (R$)": valor})
+                                if valor > 0:  # Só adiciona se o valor for positivo
+                                    rows.append({"Consultor": nome, "Serviços (R$)": valor})
                             except:
                                 continue
     
@@ -139,7 +159,6 @@ def extract_servicos_pdf(file):
         return df
     
     return pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
-
 
 def processar_dados(df_pecas, df_servicos, ano, mes):
     # Garante que as tabelas existam
@@ -162,7 +181,6 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
 
     return df.sort_values("Total Geral (R$)", ascending=False)
 
-
 def exportar(df, formato, filename):
     buf = io.BytesIO()
     if formato == "Excel":
@@ -173,7 +191,6 @@ def exportar(df, formato, filename):
         buf.write(df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
         st.download_button("⬇️ Baixar CSV", buf.getvalue(), filename, mime="text/csv")
 
-
 def salvar_dados_setembro(df):
     """Salva os dados de setembro em um arquivo consolidado"""
     if not os.path.exists("dados_consolidados"):
@@ -182,7 +199,6 @@ def salvar_dados_setembro(df):
     filename = f"dados_consolidados/consolidado_setembro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     df.to_excel(filename, index=False, engine="openpyxl")
     return filename
-
 
 # ==============================
 # INTERFACE STREAMLIT
