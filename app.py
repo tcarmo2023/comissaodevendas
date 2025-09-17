@@ -74,6 +74,17 @@ def normalizar_nome(nome):
     return None
 
 
+def extract_text_pdf(file):
+    """Extrai o texto bruto do PDF (para debug)"""
+    texto_total = []
+    with pdfplumber.open(file) as pdf:
+        for i, page in enumerate(pdf.pages, start=1):
+            text = page.extract_text()
+            if text:
+                texto_total.append(f"=== Página {i} ===\n{text}")
+    return "\n\n".join(texto_total)
+
+
 def extract_pecas_pdf(file):
     """Extrai dados do PDF de peças"""
     rows = []
@@ -84,8 +95,6 @@ def extract_pecas_pdf(file):
                 lines = text.split('\n')
                 for line in lines:
                     line = line.strip()
-                    print("DEBUG PEÇAS:", line)  # <-- DEBUG: veja no terminal
-
                     patterns = [
                         r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,\.]+",
                         r"(.+?)\s+R\$\s*([\d\.\,]+)",
@@ -97,7 +106,7 @@ def extract_pecas_pdf(file):
                         match = re.search(pattern, line)
                         if match:
                             nome_bruto = match.group(1).strip()
-                            nome_limpo = re.sub(r"\s{2,}", " ", nome_bruto)  # remove espaços duplos
+                            nome_limpo = re.sub(r"\s{2,}", " ", nome_bruto)
                             nome = normalizar_nome(nome_limpo)
 
                             if nome and nome in VENDEDORES_VALIDOS:
@@ -128,7 +137,6 @@ def extract_servicos_pdf(file):
                 lines = text.split('\n')
                 for line in lines:
                     line = line.strip()
-
                     patterns = [
                         r"(.+?)\s+([\d\.\,]+)\s+\d+",
                         r"(.+?)\s+([\d\.\,]+)$"
@@ -178,6 +186,7 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
 
     return df.sort_values("Total Geral (R$)", ascending=False)
 
+
 def exportar(df, formato, filename):
     buf = io.BytesIO()
     if formato == "Excel":
@@ -188,14 +197,14 @@ def exportar(df, formato, filename):
         buf.write(df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
         st.download_button("⬇️ Baixar CSV", buf.getvalue(), filename, mime="text/csv")
 
+
 def salvar_dados_setembro(df):
-    """Salva os dados de setembro em um arquivo consolidado"""
     if not os.path.exists("dados_consolidados"):
         os.makedirs("dados_consolidados")
-    
     filename = f"dados_consolidados/consolidado_setembro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     df.to_excel(filename, index=False, engine="openpyxl")
     return filename
+
 
 # ==============================
 # INTERFACE STREAMLIT
@@ -204,75 +213,81 @@ st.set_page_config(page_title="Comissão de Vendas", layout="wide")
 st.title("📊 Comissão de Vendas")
 st.markdown("---")
 
-# Upload
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader("📄 Arquivo - Peças")
-    file_pecas = st.file_uploader("Upload Peças", type=["pdf"], label_visibility="collapsed", key="pecas")
-with col2:
-    st.subheader("📄 Arquivo - Serviços")
-    file_servicos = st.file_uploader("Upload Serviços", type=["pdf"], label_visibility="collapsed", key="servicos")
+aba = st.tabs(["🔎 Pré-visualizar PDFs", "📊 Processar Dados"])
 
-st.markdown("---")
+with aba[0]:
+    st.subheader("Pré-visualização dos PDFs")
+    col1, col2 = st.columns(2)
+    with col1:
+        file_pecas_prev = st.file_uploader("Upload Peças (para visualizar)", type=["pdf"], key="pecas_prev")
+        if file_pecas_prev:
+            st.text_area("Texto do PDF - Peças", extract_text_pdf(file_pecas_prev), height=400)
+    with col2:
+        file_servicos_prev = st.file_uploader("Upload Serviços (para visualizar)", type=["pdf"], key="servicos_prev")
+        if file_servicos_prev:
+            st.text_area("Texto do PDF - Serviços", extract_text_pdf(file_servicos_prev), height=400)
 
-# Inputs
-col3, col4 = st.columns(2)
-with col3:
-    ano = st.number_input("**Ano**", min_value=2020, max_value=2100, value=datetime.now().year)
-with col4:
-    mes = st.selectbox("**Mês**",
-        ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-         "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"],
-        index=datetime.now().month - 1)
+with aba[1]:
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📄 Arquivo - Peças")
+        file_pecas = st.file_uploader("Upload Peças", type=["pdf"], label_visibility="collapsed", key="pecas_proc")
+    with col2:
+        st.subheader("📄 Arquivo - Serviços")
+        file_servicos = st.file_uploader("Upload Serviços", type=["pdf"], label_visibility="collapsed", key="servicos_proc")
 
-st.markdown("---")
+    st.markdown("---")
 
-# Processamento
-if file_pecas and file_servicos:
-    if st.button("🚀 Processar Arquivos", type="primary"):
-        with st.spinner("Processando..."):
-            df_pecas = extract_pecas_pdf(file_pecas)
-            df_servicos = extract_servicos_pdf(file_servicos)
-            df_final = processar_dados(df_pecas, df_servicos, ano, mes)
+    col3, col4 = st.columns(2)
+    with col3:
+        ano = st.number_input("**Ano**", min_value=2020, max_value=2100, value=datetime.now().year)
+    with col4:
+        mes = st.selectbox("**Mês**",
+            ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+            "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"],
+            index=datetime.now().month - 1)
 
-        if not df_final.empty:
-            st.subheader("📋 Resultados")
-            st.dataframe(df_final, use_container_width=True)
+    st.markdown("---")
 
-            # Totais
-            total_pecas = df_final["Peças (R$)"].sum()
-            total_servicos = df_final["Serviços (R$)"].sum()
-            total_geral = df_final["Total Geral (R$)"].sum()
-            total_comissao = df_final["Comissão (R$)"].sum()
+    if file_pecas and file_servicos:
+        if st.button("🚀 Processar Arquivos", type="primary"):
+            with st.spinner("Processando..."):
+                df_pecas = extract_pecas_pdf(file_pecas)
+                df_servicos = extract_servicos_pdf(file_servicos)
+                df_final = processar_dados(df_pecas, df_servicos, ano, mes)
 
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Peças", f"R$ {total_pecas:,.2f}")
-            with col2:
-                st.metric("Total Serviços", f"R$ {total_servicos:,.2f}")
-            with col3:
-                st.metric("Total Geral", f"R$ {total_geral:,.2f}")
-            with col4:
-                st.metric("Comissão Total", f"R$ {total_comissao:,.2f}")
+            if not df_final.empty:
+                st.subheader("📋 Resultados")
+                st.dataframe(df_final, use_container_width=True)
 
-            # Exportação
-            st.subheader("💾 Exportar")
-            formato = st.radio("Formato:", ["Excel", "CSV"], horizontal=True, key="export_format")
-            
-            col_export1, col_export2 = st.columns(2)
-            with col_export1:
-                exportar(df_final, formato, f"comissao_{mes}_{ano}.{formato.lower()}")
-            
-            # Botão para salvar dados de setembro
-            if mes == "Setembro":
-                with col_export2:
-                    if st.button("💾 Salvar Dados Setembro", type="secondary"):
-                        filename = salvar_dados_setembro(df_final)
-                        st.success(f"✅ Dados de setembro salvos em: {filename}")
-                        st.info("📁 Os dados foram salvos na pasta 'dados_consolidados'")
+                total_pecas = df_final["Peças (R$)"].sum()
+                total_servicos = df_final["Serviços (R$)"].sum()
+                total_geral = df_final["Total Geral (R$)"].sum()
+                total_comissao = df_final["Comissão (R$)"].sum()
 
-        else:
-            st.error("❌ Não foi possível processar os dados. Verifique se os PDFs têm o formato correto.")
-else:
-    st.info("📝 Faça upload dos arquivos PDF de peças e serviços para começar.")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Peças", f"R$ {total_pecas:,.2f}")
+                with col2:
+                    st.metric("Total Serviços", f"R$ {total_servicos:,.2f}")
+                with col3:
+                    st.metric("Total Geral", f"R$ {total_geral:,.2f}")
+                with col4:
+                    st.metric("Comissão Total", f"R$ {total_comissao:,.2f}")
 
+                st.subheader("💾 Exportar")
+                formato = st.radio("Formato:", ["Excel", "CSV"], horizontal=True, key="export_format")
+                col_export1, col_export2 = st.columns(2)
+                with col_export1:
+                    exportar(df_final, formato, f"comissao_{mes}_{ano}.{formato.lower()}")
+
+                if mes == "Setembro":
+                    with col_export2:
+                        if st.button("💾 Salvar Dados Setembro", type="secondary"):
+                            filename = salvar_dados_setembro(df_final)
+                            st.success(f"✅ Dados de setembro salvos em: {filename}")
+                            st.info("📁 Os dados foram salvos na pasta 'dados_consolidados'")
+            else:
+                st.error("❌ Não foi possível processar os dados. Verifique se os PDFs têm o formato correto.")
+    else:
+        st.info("📝 Faça upload dos arquivos PDF de peças e serviços para começar.")
