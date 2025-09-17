@@ -2,15 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import io, re
-import matplotlib.pyplot as plt
 
-# ---------------- PREVENÇÃO DE ERROS ----------------
+# ---------------- CONFIG ----------------
 try:
     st.set_page_config(page_title="Comissão de Vendas", layout="wide")
 except:
     pass
 
-# Dependências opcionais
 try:
     import pdfplumber
     PDFPLUMBER_OK = True
@@ -18,7 +16,7 @@ except ImportError:
     PDFPLUMBER_OK = False
     st.sidebar.error("❌ pdfplumber não instalado")
 
-# ---------------- LISTA DE CONSULTORES ----------------
+# ---------------- LISTA FIXA DE CONSULTORES ----------------
 CONSULTORES_VALIDOS = {
     "TIAGO FERNANDES DE LIMA": "TIAGO FERNANDES DE LIMA",
     "TARCISIO TORRES DE ANDRADE": "TARCISIO TORRES DE ANDRADE",
@@ -38,11 +36,12 @@ CONSULTORES_VALIDOS = {
 }
 
 def normalizar_nome(nome):
+    """Mantém apenas nomes da lista fixa"""
     nome_upper = nome.upper().strip()
     for chave, correto in CONSULTORES_VALIDOS.items():
         if chave in nome_upper:
             return correto
-    return nome.strip()
+    return None  # ❌ ignora se não estiver na lista
 
 # ---------------- EXTRAÇÃO ----------------
 def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
@@ -51,6 +50,8 @@ def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
         match = re.search(r"(.+?)\s+([\d\.\,]+)", line)
         if match:
             nome = normalizar_nome(match.group(1))
+            if not nome:  # ❌ ignora nomes fora da lista
+                continue
             valor = match.group(2).replace(".", "").replace(",", ".")
             try:
                 valor = float(valor)
@@ -73,9 +74,13 @@ def extract_file(file_obj, coluna_valor, tipo="pecas"):
                     continue
         return extract_custom_pdf(text, coluna_valor, tipo)
     elif file_obj.name.endswith((".xlsx", ".xls")):
-        return pd.read_excel(file_obj)[["Consultor", coluna_valor]]
+        df = pd.read_excel(file_obj)
+        df["Consultor"] = df["Consultor"].apply(normalizar_nome)
+        return df.dropna(subset=["Consultor"])[["Consultor", coluna_valor]]
     elif file_obj.name.endswith(".csv"):
-        return pd.read_csv(file_obj)[["Consultor", coluna_valor]]
+        df = pd.read_csv(file_obj)
+        df["Consultor"] = df["Consultor"].apply(normalizar_nome)
+        return df.dropna(subset=["Consultor"])[["Consultor", coluna_valor]]
     else:
         return pd.DataFrame(columns=["Consultor", coluna_valor])
 
@@ -153,7 +158,7 @@ if file_pecas and file_servicos:
             if search:
                 df_final = df_final[df_final["Consultor"].str.contains(search, case=False, na=False)]
 
-            # ⬆️⬇️ Ordenação
+            # Ordenação
             colunas = df_final.columns.tolist()
             ordem_col = st.selectbox("Ordenar por:", colunas, index=colunas.index("Total Geral (R$)"))
             ordem_tipo = st.radio("Ordem:", ["Decrescente", "Crescente"], horizontal=True)
@@ -162,25 +167,6 @@ if file_pecas and file_servicos:
 
             # Mostrar tabela
             st.dataframe(df_final, use_container_width=True)
-
-            # 📊 Gráfico de barras - Comissão
-            st.subheader("📊 Comissão por Consultor")
-            fig, ax = plt.subplots(figsize=(10,6))
-            df_plot = df_final.sort_values("Comissão (R$)", ascending=False)
-            ax.barh(df_plot["Consultor"], df_plot["Comissão (R$)"])
-            ax.set_xlabel("Comissão (R$)")
-            ax.set_ylabel("Consultor")
-            ax.set_title("Comissão por Consultor")
-            st.pyplot(fig)
-
-            # 🥧 Gráfico de pizza - Participação
-            st.subheader("🥧 Participação na Comissão Total")
-            fig2, ax2 = plt.subplots()
-            df_pizza = df_final[df_final["Comissão (R$)"] > 0]
-            ax2.pie(df_pizza["Comissão (R$)"], labels=df_pizza["Consultor"],
-                    autopct="%1.1f%%", startangle=90)
-            ax2.axis("equal")
-            st.pyplot(fig2)
 
             # Métricas
             col1, col2, col3 = st.columns(3)
