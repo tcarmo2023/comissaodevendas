@@ -8,6 +8,33 @@ import io
 import tempfile
 import os
 
+# No início do arquivo, após os imports
+try:
+    import camelot
+except ImportError:
+    st.error("Erro ao importar Camelot. Verifique as dependências.")
+    st.stop()
+
+# Na função extract_pdf, adicione tratamento de erro:
+def extract_pdf(file_obj, coluna_valor):
+    """Extrai tabelas de um PDF e retorna DataFrame formatado"""
+    try:
+        # Salva o arquivo temporariamente para o Camelot processar
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(file_obj.read())
+            tmp_file_path = tmp_file.name
+        
+        tables = camelot.read_pdf(tmp_file_path, pages="all", flavor="stream")
+    except Exception as e:
+        st.error(f"Erro ao processar PDF: {str(e)}")
+        return pd.DataFrame(columns=["Consultor", coluna_valor])
+    finally:
+        # Remove o arquivo temporário
+        if 'tmp_file_path' in locals():
+            os.unlink(tmp_file_path)
+    
+    # Resto do código da função...
+
 # ---------------- CONFIGURAÇÃO ----------------
 st.set_page_config(page_title="Comissão de Vendas", layout="wide")
 
@@ -146,4 +173,5 @@ if st.checkbox("📖 Ver dados existentes"):
         filtro_ano = st.selectbox("Filtrar Ano", sorted(dados["Ano"].unique()))
         filtro_mes = st.selectbox("Filtrar Mês", sorted(dados["Mês"].unique()))
         filtrado = dados[(dados["Ano"] == filtro_ano) & (dados["Mês"] == filtro_mes)]
+
         st.dataframe(filtrado, use_container_width=True)
