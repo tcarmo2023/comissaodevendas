@@ -69,7 +69,7 @@ def normalizar_nome(nome):
     return None
 
 def extract_pecas_pdf(file):
-    """Extrai dados do PDF de peças"""
+    """Extrai dados do PDF de peças - método mais robusto"""
     rows = []
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
@@ -77,17 +77,33 @@ def extract_pecas_pdf(file):
             if text:
                 lines = text.split('\n')
                 for line in lines:
-                    # Padrão para peças: Nome + R$ valor + % rentabilidade
-                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)(?:\s*\%\s*[\d\-\,\.]+)?", line)
-                    if match:
-                        nome = normalizar_nome(match.group(1).strip())
-                        if nome and nome in VENDEDORES_VALIDOS:  # Só adiciona se for vendedor válido
-                            valor = match.group(2).replace(".", "").replace(",", ".")
-                            try:
-                                valor = float(valor)
-                                rows.append({"Consultor": nome, "Peças (R$)": valor})
-                            except:
-                                continue
+                    line = line.strip()
+                    
+                    # Múltiplos padrões para capturar diferentes formatos
+                    patterns = [
+                        # Padrão 1: Nome + R$ valor + % rentabilidade
+                        r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,\.]+",
+                        # Padrão 2: Nome + R$ valor (sem porcentagem)
+                        r"(.+?)\s+R\$\s*([\d\.\,]+)",
+                        # Padrão 3: Nome + valor numérico + % (sem R$)
+                        r"(.+?)\s+([\d\.\,]+)\s+\%",
+                        # Padrão 4: Apenas nome e valor (último recurso)
+                        r"(.+?)\s+([\d\.\,]+)$"
+                    ]
+                    
+                    for pattern in patterns:
+                        match = re.search(pattern, line)
+                        if match:
+                            nome = normalizar_nome(match.group(1).strip())
+                            if nome and nome in VENDEDORES_VALIDOS:
+                                valor_str = match.group(2).replace(".", "").replace(",", ".")
+                                try:
+                                    valor = float(valor_str)
+                                    if valor > 0:  # Só adiciona se o valor for positivo
+                                        rows.append({"Consultor": nome, "Peças (R$)": valor})
+                                        break  # Para no primeiro padrão que der match
+                                except:
+                                    continue
     
     if rows:
         df = pd.DataFrame(rows)
@@ -105,18 +121,29 @@ def extract_servicos_pdf(file):
             if text:
                 lines = text.split('\n')
                 for line in lines:
-                    # Padrão para serviços: Nome + valor numérico + quantidade
-                    match = re.search(r"(.+?)\s+([\d\.\,]+)(?:\s+\d+)?", line)
-                    if match:
-                        nome = normalizar_nome(match.group(1).strip())
-                        if nome and nome in VENDEDORES_VALIDOS:  # Só adiciona se for vendedor válido
-                            valor = match.group(2).replace(".", "").replace(",", ".")
-                            try:
-                                valor = float(valor)
-                                if valor > 0:  # Só adiciona se o valor for positivo
-                                    rows.append({"Consultor": nome, "Serviços (R$)": valor})
-                            except:
-                                continue
+                    line = line.strip()
+                    
+                    # Padrões para serviços
+                    patterns = [
+                        # Padrão 1: Nome + valor + quantidade
+                        r"(.+?)\s+([\d\.\,]+)\s+\d+",
+                        # Padrão 2: Apenas nome e valor
+                        r"(.+?)\s+([\d\.\,]+)$"
+                    ]
+                    
+                    for pattern in patterns:
+                        match = re.search(pattern, line)
+                        if match:
+                            nome = normalizar_nome(match.group(1).strip())
+                            if nome and nome in VENDEDORES_VALIDOS:
+                                valor_str = match.group(2).replace(".", "").replace(",", ".")
+                                try:
+                                    valor = float(valor_str)
+                                    if valor > 0:
+                                        rows.append({"Consultor": nome, "Serviços (R$)": valor})
+                                        break
+                                except:
+                                    continue
     
     if rows:
         df = pd.DataFrame(rows)
