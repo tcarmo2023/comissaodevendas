@@ -7,7 +7,7 @@ import io
 import os
 
 # ==============================
-# LISTA DOS VENDEDORES VÁLIDOS (APENAS OS QUE DEVEM SER CONSIDERADOS)
+# LISTA DOS VENDEDORES VÁLIDOS
 # ==============================
 VENDEDORES_VALIDOS = [
     "TIAGO FERNANDES DE LIMA",
@@ -28,7 +28,7 @@ VENDEDORES_VALIDOS = [
 ]
 
 # ==============================
-# MAPEAMENTO DE PRIMEIRO+SEGUNDO NOME PARA NOME COMPLETO
+# MAPEAMENTO DE PRIMEIRO+SEGUNDO NOME
 # ==============================
 MAPEAMENTO_NOMES = {
     "TIAGO FERNANDES": "TIAGO FERNANDES DE LIMA",
@@ -53,23 +53,29 @@ MAPEAMENTO_NOMES = {
 # ==============================
 def normalizar_nome(nome):
     nome_upper = nome.upper().strip()
-    
-    # 1 - Tenta encontrar pelo mapeamento de primeiro+segundo nome
     partes = nome_upper.split()
+
+    # 1 - Tenta primeiro + segundo nome
     if len(partes) >= 2:
         chave = f"{partes[0]} {partes[1]}"
         if chave in MAPEAMENTO_NOMES:
             return MAPEAMENTO_NOMES[chave]
-    
-    # 2 - Tenta encontrar nome exato na lista de vendedores válidos
+
+    # 2 - Se vier só o primeiro nome e só existe 1 vendedor com esse nome → usa
+    candidatos = [v for v in VENDEDORES_VALIDOS if partes[0] in v.upper()]
+    if len(candidatos) == 1:
+        return candidatos[0]
+
+    # 3 - Busca exata parcial
     for vendedor in VENDEDORES_VALIDOS:
         if vendedor.upper() in nome_upper or nome_upper in vendedor.upper():
             return vendedor
     
     return None
 
+
 def extract_pecas_pdf(file):
-    """Extrai dados do PDF de peças - método mais robusto"""
+    """Extrai dados do PDF de peças"""
     rows = []
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
@@ -78,40 +84,39 @@ def extract_pecas_pdf(file):
                 lines = text.split('\n')
                 for line in lines:
                     line = line.strip()
-                    
-                    # Padrão 1: Nome + R$ Valor Venda + % Rentab.
-                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,\.]+", line)
-                    if match:
-                        nome = normalizar_nome(match.group(1).strip())
-                        if nome and nome in VENDEDORES_VALIDOS:
-                            valor_str = match.group(2).replace(".", "").replace(",", ".")
-                            try:
-                                valor = float(valor_str)
-                                if valor > 0:
-                                    rows.append({"Consultor": nome, "Peças (R$)": valor})
-                                    continue  # Pula para próxima linha se encontrou
-                            except:
-                                pass
-                    
-                    # Padrão 2: Nome + R$ Valor Venda (sem porcentagem)
-                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)(?:\s*\%)?", line)
-                    if match:
-                        nome = normalizar_nome(match.group(1).strip())
-                        if nome and nome in VENDEDORES_VALIDOS:
-                            valor_str = match.group(2).replace(".", "").replace(",", ".")
-                            try:
-                                valor = float(valor_str)
-                                if valor > 0:
-                                    rows.append({"Consultor": nome, "Peças (R$)": valor})
-                            except:
-                                continue
-    
+                    print("DEBUG PEÇAS:", line)  # <-- DEBUG: veja no terminal
+
+                    patterns = [
+                        r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,\.]+",
+                        r"(.+?)\s+R\$\s*([\d\.\,]+)",
+                        r"(.+?)\s+([\d\.\,]+)\s+\%",
+                        r"(.+?)\s+([\d\.\,]+)$"
+                    ]
+
+                    for pattern in patterns:
+                        match = re.search(pattern, line)
+                        if match:
+                            nome_bruto = match.group(1).strip()
+                            nome_limpo = re.sub(r"\s{2,}", " ", nome_bruto)  # remove espaços duplos
+                            nome = normalizar_nome(nome_limpo)
+
+                            if nome and nome in VENDEDORES_VALIDOS:
+                                valor_str = match.group(2).replace(".", "").replace(",", ".")
+                                try:
+                                    valor = float(valor_str)
+                                    if valor > 0:
+                                        rows.append({"Consultor": nome, "Peças (R$)": valor})
+                                        break
+                                except:
+                                    continue
+
     if rows:
         df = pd.DataFrame(rows)
         df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
         return df
-    
+
     return pd.DataFrame(columns=["Consultor", "Peças (R$)"])
+
 
 def extract_servicos_pdf(file):
     """Extrai dados do PDF de serviços"""
@@ -123,19 +128,19 @@ def extract_servicos_pdf(file):
                 lines = text.split('\n')
                 for line in lines:
                     line = line.strip()
-                    
-                    # Padrões para serviços
+
                     patterns = [
-                        # Padrão 1: Nome + valor + quantidade
                         r"(.+?)\s+([\d\.\,]+)\s+\d+",
-                        # Padrão 2: Apenas nome e valor
                         r"(.+?)\s+([\d\.\,]+)$"
                     ]
-                    
+
                     for pattern in patterns:
                         match = re.search(pattern, line)
                         if match:
-                            nome = normalizar_nome(match.group(1).strip())
+                            nome_bruto = match.group(1).strip()
+                            nome_limpo = re.sub(r"\s{2,}", " ", nome_bruto)
+                            nome = normalizar_nome(nome_limpo)
+
                             if nome and nome in VENDEDORES_VALIDOS:
                                 valor_str = match.group(2).replace(".", "").replace(",", ".")
                                 try:
@@ -145,37 +150,32 @@ def extract_servicos_pdf(file):
                                         break
                                 except:
                                     continue
-    
+
     if rows:
         df = pd.DataFrame(rows)
         df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
         return df
-    
+
     return pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
 
+
 def processar_dados(df_pecas, df_servicos, ano, mes):
-    # Cria DataFrames vazios com todos os vendedores válidos
     todos_vendedores = pd.DataFrame({"Consultor": VENDEDORES_VALIDOS})
-    
-    # Garante que as tabelas tenham a coluna Consultor
+
     if df_pecas.empty:
         df_pecas = pd.DataFrame(columns=["Consultor", "Peças (R$)"])
     if df_servicos.empty:
         df_servicos = pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
-    
-    # Merge com todos os vendedores para garantir que apareçam todos
+
     df_pecas_completo = pd.merge(todos_vendedores, df_pecas, on="Consultor", how="left").fillna(0)
     df_servicos_completo = pd.merge(todos_vendedores, df_servicos, on="Consultor", how="left").fillna(0)
-    
-    # Junta peças e serviços
+
     df = pd.merge(df_pecas_completo, df_servicos_completo, on="Consultor", how="outer").fillna(0)
-    
-    # Calcula totais
     df["Total Geral (R$)"] = df["Peças (R$)"] + df["Serviços (R$)"]
     df["Comissão (R$)"] = df["Total Geral (R$)"] * 0.01
     df.insert(0, "Ano", ano)
     df.insert(1, "Mês", mes)
-    
+
     return df.sort_values("Total Geral (R$)", ascending=False)
 
 def exportar(df, formato, filename):
@@ -275,3 +275,4 @@ if file_pecas and file_servicos:
             st.error("❌ Não foi possível processar os dados. Verifique se os PDFs têm o formato correto.")
 else:
     st.info("📝 Faça upload dos arquivos PDF de peças e serviços para começar.")
+
