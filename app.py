@@ -38,14 +38,13 @@ CONSULTORES_VALIDOS = {
 }
 
 def normalizar_nome(nome):
-    """Normaliza nomes conhecidos ou mantém o original"""
     nome_upper = nome.upper().strip()
     for chave, correto in CONSULTORES_VALIDOS.items():
         if chave in nome_upper:
             return correto
     return nome.strip()
 
-# ---------------- FUNÇÃO DE EXTRAÇÃO ----------------
+# ---------------- EXTRAÇÃO ----------------
 def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
     rows = []
     for line in text.splitlines():
@@ -73,7 +72,7 @@ def extract_file(file_obj, coluna_valor, tipo="pecas"):
                 except:
                     continue
         return extract_custom_pdf(text, coluna_valor, tipo)
-    elif file_obj.name.endswith(".xlsx") or file_obj.name.endswith(".xls"):
+    elif file_obj.name.endswith((".xlsx", ".xls")):
         return pd.read_excel(file_obj)[["Consultor", coluna_valor]]
     elif file_obj.name.endswith(".csv"):
         return pd.read_csv(file_obj)[["Consultor", coluna_valor]]
@@ -173,6 +172,15 @@ if file_pecas and file_servicos:
             ax.set_ylabel("Consultor")
             ax.set_title("Comissão por Consultor")
             st.pyplot(fig)
+
+            # 🥧 Gráfico de pizza - Participação
+            st.subheader("🥧 Participação na Comissão Total")
+            fig2, ax2 = plt.subplots()
+            df_pizza = df_final[df_final["Comissão (R$)"] > 0]
+            ax2.pie(df_pizza["Comissão (R$)"], labels=df_pizza["Consultor"],
+                    autopct="%1.1f%%", startangle=90)
+            ax2.axis("equal")
+            st.pyplot(fig2)
 
             # Métricas
             col1, col2, col3 = st.columns(3)
