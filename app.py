@@ -5,7 +5,7 @@ import io
 import os
 import traceback
 import re
-import pdfplumber  # <-- usado para extrair texto dos PDFs
+import pdfplumber  # para ler PDFs
 
 # ---------------- PREVENÇÃO DE ERROS ----------------
 try:
@@ -13,7 +13,7 @@ try:
 except:
     pass
 
-# Verificação SEGURA das secrets (evita erro se não existirem)
+# Verificação SEGURA das secrets
 try:
     if "gcp_service_account" in st.secrets:
         st.sidebar.success("✅ Secrets do Google encontradas!")
@@ -37,7 +37,6 @@ SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1h3Okp_0aQvafltjoBbt6F
 ABA = "Comissao"
 
 def get_google_client():
-    """Conectar no Google Sheets (se disponível)"""
     if not GOOGLE_SHEETS_DISPONIVEL:
         return None
     try:
@@ -55,30 +54,66 @@ def get_google_client():
 # ---------------- EXTRAÇÃO PDF ----------------
 def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
     """
-    Extrai nomes e valores dos PDFs fornecidos (Peças e Serviços)
-    tipo = "pecas" ou "servicos"
+    Extrai nomes e valores dos PDFs (Peças e Serviços)
+    Aceita valor e nome na mesma linha ou em linhas diferentes
     """
     dados = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    linhas = [l.strip() for l in text.splitlines() if l.strip()]
+
+    i = 0
+    while i < len(linhas):
+        line = linhas[i]
 
         if tipo == "pecas":
-            # Exemplo: "% 33,37R$ 273.149,56TIAGO FERNANDES DE LIMA"
+            # Caso 1: tudo na mesma linha → "R$ 273.149,56TIAGO FERNANDES"
             m = re.search(r"R\$ ?([\d\.\,]+)\s*([A-ZÇÉÊÁÍÓÚÃÕa-zçéêáíóúãõ\s]+)$", line)
-        else:
-            # Exemplo: "2099.533,70TIAGO FERNANDES DE LIMA"
-            m = re.search(r"([\d\.\,]+)\s*([A-ZÇÉÊÁÍÓÚÃÕa-zçéêáíóúãõ\s]+)$", line)
+            if m:
+                valor = m.group(1).replace(".", "").replace(",", ".")
+                nome = m.group(2).strip()
+                try:
+                    valor = float(valor)
+                    dados.append({"Consultor": nome, coluna_valor: valor})
+                except:
+                    pass
 
-        if m:
-            valor = m.group(1).replace(".", "").replace(",", ".")
-            try:
-                valor = float(valor)
-            except:
-                continue
-            nome = m.group(2).strip()
-            dados.append({"Consultor": nome, coluna_valor: valor})
+            # Caso 2: valor em uma linha, nome na próxima
+            else:
+                m_val = re.search(r"R\$ ?([\d\.\,]+)", line)
+                if m_val and i + 1 < len(linhas):
+                    nome = linhas[i+1].strip()
+                    valor = m_val.group(1).replace(".", "").replace(",", ".")
+                    try:
+                        valor = float(valor)
+                        dados.append({"Consultor": nome, coluna_valor: valor})
+                        i += 1  # pular o nome
+                    except:
+                        pass
+
+        else:  # serviços
+            # Caso 1: tudo na mesma linha → "9533,70TIAGO FERNANDES"
+            m = re.search(r"([\d\.\,]+)\s*([A-ZÇÉÊÁÍÓÚÃÕa-zçéêáíóúãõ\s]+)$", line)
+            if m:
+                valor = m.group(1).replace(".", "").replace(",", ".")
+                nome = m.group(2).strip()
+                try:
+                    valor = float(valor)
+                    dados.append({"Consultor": nome, coluna_valor: valor})
+                except:
+                    pass
+
+            # Caso 2: valor em uma linha, nome na próxima
+            else:
+                m_val = re.search(r"([\d\.\,]+)", line)
+                if m_val and i + 1 < len(linhas):
+                    nome = linhas[i+1].strip()
+                    valor = m_val.group(1).replace(".", "").replace(",", ".")
+                    try:
+                        valor = float(valor)
+                        dados.append({"Consultor": nome, coluna_valor: valor})
+                        i += 1
+                    except:
+                        pass
+        i += 1
 
     df = pd.DataFrame(dados)
     if not df.empty:
@@ -86,7 +121,7 @@ def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
     return df
 
 def extract_file(file_obj, coluna_valor, tipo="pecas"):
-    """Detecta tipo e chama o parser certo"""
+    """Detecta tipo e chama parser certo"""
     if file_obj.name.endswith(".pdf"):
         text = ""
         file_obj.seek(0)
@@ -98,6 +133,11 @@ def extract_file(file_obj, coluna_valor, tipo="pecas"):
                         text += page_text + "\n"
                 except:
                     continue
+
+        # Debug: mostrar no sidebar as primeiras linhas
+        st.sidebar.subheader(f"📄 Texto bruto ({tipo})")
+        st.sidebar.text(text[:1500])  # Mostra até 1500 chars
+
         return extract_custom_pdf(text, coluna_valor, tipo)
 
     elif file_obj.name.endswith((".xls", ".xlsx")):
@@ -116,7 +156,6 @@ def extract_file(file_obj, coluna_valor, tipo="pecas"):
 
 # ---------------- PROCESSAMENTO ----------------
 def processar_dados(df_pecas, df_servicos, ano, mes):
-    """Une peças + serviços e calcula comissão"""
     if df_pecas.empty:
         df_pecas = pd.DataFrame(columns=["Consultor", "Peças (R$)"])
     if df_servicos.empty:
@@ -132,7 +171,6 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
 
 # ---------------- SALVAR ----------------
 def salvar_google_sheets(df):
-    """Salva dados no Google Sheets (se disponível)"""
     if not GOOGLE_SHEETS_DISPONIVEL:
         return salvar_localmente(df)
     try:
@@ -158,7 +196,6 @@ def salvar_google_sheets(df):
         return salvar_localmente(df)
 
 def salvar_localmente(df):
-    """Salva localmente como fallback"""
     try:
         if not os.path.exists("dados_comissao"):
             os.makedirs("dados_comissao")
@@ -171,7 +208,6 @@ def salvar_localmente(df):
 
 # ---------------- EXPORTAR ----------------
 def exportar(df, formato):
-    """Exporta dados"""
     try:
         buf = io.BytesIO()
         if formato == "Excel":
@@ -190,7 +226,6 @@ def exportar(df, formato):
 st.title("📊 Comissão de Vendas")
 st.markdown("---")
 
-# Upload
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("📄 Arquivo - Peças")
@@ -199,7 +234,6 @@ with col2:
     st.subheader("📄 Arquivo - Serviços")
     file_servicos = st.file_uploader("Upload Serviços", type=["pdf", "xlsx", "xls", "csv"], key="servicos")
 
-# Inputs
 col3, col4 = st.columns(2)
 with col3:
     ano = st.number_input("**Ano**", min_value=2020, max_value=2100, value=datetime.now().year)
@@ -209,7 +243,6 @@ with col4:
                         "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"],
                        index=datetime.now().month-1)
 
-# Processar
 if file_pecas and file_servicos:
     if st.button("🚀 Processar Arquivos", type="primary", key="processar_btn"):
         with st.spinner("Processando..."):
@@ -221,18 +254,15 @@ if file_pecas and file_servicos:
             st.subheader("📋 Resultados")
             st.dataframe(df_final, use_container_width=True)
 
-            # Métricas
             col1, col2, col3 = st.columns(3)
             col1.metric("Total Peças", f"R$ {df_final['Peças (R$)'].sum():,.2f}")
             col2.metric("Total Serviços", f"R$ {df_final['Serviços (R$)'].sum():,.2f}")
             col3.metric("Comissão Total", f"R$ {df_final['Comissão (R$)'].sum():,.2f}")
 
-            # Exportação
             st.subheader("💾 Exportar")
             formato = st.radio("Formato:", ["Excel", "CSV"], horizontal=True, key="radio_export")
             exportar(df_final, formato)
 
-            # Salvar
             st.subheader("💾 Salvar")
             if st.button("💾 Salvar Dados", key="salvar_btn"):
                 if salvar_google_sheets(df_final):
