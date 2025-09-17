@@ -23,7 +23,14 @@ CONSULTORES_VALIDOS = {
     "FRANCISCO SEVERO SILVA": "Francisco Severo Silva",
     "RENATO TAVARES": "RENATO TAVARES",
     "ALINY BITENCOURT DOS REIS LIMA": "ALINY BITENCOURT DOS REIS LIMA",
-    "FLAVIO ROGERIO DE ALMEIDA BARBOSA": "Flavio Rogerio de Almeida Barbosa"
+    "FLAVIO ROGERIO DE ALMEIDA BARBOSA": "Flavio Rogerio de Almeida Barbosa",
+    "BRUNA SILVA DE ASSIS": "BRUNA SILVA DE ASSIS",
+    "ANA LEYA LIMA ALVES FROTA": "Ana Leya Lima Alves Frota",
+    "FLÁVIA CAROLINA BARBOSA DA COSTA": "FLÁVIA CAROLINA BARBOSA DA COSTA",
+    "GIOVANA BRUNO DA SILVA": "Giovana Bruno da Silva",
+    "GIOVANA SILVA": "Giovana Silva",
+    "ISABELLE SOUZA": "Isabelle Souza",
+    "GRAZIELA SILVA DOS SANTOS GALDINO": "GRAZIELA SILVA DOS SANTOS GALDINO"
 }
 
 # ==============================
@@ -45,6 +52,13 @@ CONSULTORES_CHAVES = {
     "CAMILA AGUIAR": "CAMILA AGUIAR",
     "SERGIO CARVALHO": "SERGIO CARVALHO",
     "FLAVIO ROGERIO": "Flavio Rogerio de Almeida Barbosa",
+    "BRUNA SILVA": "BRUNA SILVA DE ASSIS",
+    "ANA LEYA": "Ana Leya Lima Alves Frota",
+    "FLÁVIA CAROLINA": "FLÁVIA CAROLINA BARBOSA DA COSTA",
+    "GIOVANA BRUNO": "Giovana Bruno da Silva",
+    "GIOVANA SILVA": "Giovana Silva",
+    "ISABELLE SOUZA": "Isabelle Souza",
+    "GRAZIELA SILVA": "GRAZIELA SILVA DOS SANTOS GALDINO"
 }
 
 # ==============================
@@ -91,40 +105,62 @@ def preprocess_text(text):
     return "\n".join(fixed_lines)
 
 
-def extract_custom_pdf(file, coluna_valor):
+def extract_pecas_pdf(file):
+    """Extrai dados do PDF de peças"""
     rows = []
     with pdfplumber.open(file) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        text = preprocess_text(text)
-
-        for line in text.splitlines():
-            # Regex ajustado: Nome + R$ valor (somente segunda coluna)
-            match = re.search(r"(.+?)\s+R\$\s?([\d\.\,]+)", line)
-            if match:
-                nome = normalizar_nome(match.group(1))
-                if not nome:
-                    continue
-                valor = match.group(2).replace(".", "").replace(",", ".")
-                try:
-                    valor = float(valor)
-                except:
-                    valor = 0.0
-                rows.append({"Consultor": nome, coluna_valor: valor})
-
-    if rows:
-        df = pd.DataFrame(rows)
-        # Garante que não haverá duplicados (soma caso o nome se repita no PDF)
-        df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
-        return df
-
-    # Se não achar nada, devolve um DF vazio já com a coluna esperada
-    return pd.DataFrame(columns=["Consultor", coluna_valor])
-
+        for page in pdf.pages:
+            text = page.extract_text()
+            if text:
+                lines = text.split('\n')
+                for line in lines:
+                    # Procura por padrão: Nome + R$ valor + % rentabilidade
+                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,]+", line)
+                    if match:
+                        nome = normalizar_nome(match.group(1).strip())
+                        if nome:
+                            valor = match.group(2).replace(".", "").replace(",", ".")
+                            try:
+                                valor = float(valor)
+                                rows.append({"Consultor": nome, "Peças (R$)": valor})
+                            except:
+                                continue
+    
     if rows:
         df = pd.DataFrame(rows)
         df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
         return df
-    return pd.DataFrame(columns=["Consultor", coluna_valor])
+    
+    return pd.DataFrame(columns=["Consultor", "Peças (R$)"])
+
+
+def extract_servicos_pdf(file):
+    """Extrai dados do PDF de serviços"""
+    rows = []
+    with pdfplumber.open(file) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            if text:
+                lines = text.split('\n')
+                for line in lines:
+                    # Procura por padrão: Nome + valor numérico (pode ter vírgula) + quantidade
+                    match = re.search(r"(.+?)\s+([\d\.\,]+)\s+\d+", line)
+                    if match:
+                        nome = normalizar_nome(match.group(1).strip())
+                        if nome:
+                            valor = match.group(2).replace(".", "").replace(",", ".")
+                            try:
+                                valor = float(valor)
+                                rows.append({"Consultor": nome, "Serviços (R$)": valor})
+                            except:
+                                continue
+    
+    if rows:
+        df = pd.DataFrame(rows)
+        df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
+        return df
+    
+    return pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
 
 
 def processar_dados(df_pecas, df_servicos, ano, mes):
@@ -134,6 +170,7 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
     if df_servicos.empty:
         df_servicos = pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
 
+    # Merge dos dados
     df = pd.merge(df_pecas, df_servicos, on="Consultor", how="outer").fillna(0)
 
     # Garante colunas
@@ -150,6 +187,7 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
 
     return df
 
+
 def exportar(df, formato):
     buf = io.BytesIO()
     if formato == "Excel":
@@ -159,6 +197,7 @@ def exportar(df, formato):
     else:
         buf.write(df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
         st.download_button("⬇️ Baixar CSV", buf.getvalue(), "comissao.csv", mime="text/csv")
+
 
 # ==============================
 # INTERFACE STREAMLIT
@@ -171,10 +210,10 @@ st.markdown("---")
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("📄 Arquivo - Peças")
-    file_pecas = st.file_uploader("Upload Peças", type=["pdf"], label_visibility="collapsed")
+    file_pecas = st.file_uploader("Upload Peças", type=["pdf"], label_visibility="collapsed", key="pecas")
 with col2:
     st.subheader("📄 Arquivo - Serviços")
-    file_servicos = st.file_uploader("Upload Serviços", type=["pdf"], label_visibility="collapsed")
+    file_servicos = st.file_uploader("Upload Serviços", type=["pdf"], label_visibility="collapsed", key="servicos")
 
 st.markdown("---")
 
@@ -194,8 +233,8 @@ st.markdown("---")
 if file_pecas and file_servicos:
     if st.button("🚀 Processar Arquivos", type="primary"):
         with st.spinner("Processando..."):
-            df_pecas = extract_custom_pdf(file_pecas, "Peças (R$)")
-            df_servicos = extract_custom_pdf(file_servicos, "Serviços (R$)")
+            df_pecas = extract_pecas_pdf(file_pecas)
+            df_servicos = extract_servicos_pdf(file_servicos)
             df_final = processar_dados(df_pecas, df_servicos, ano, mes)
 
         if not df_final.empty:
@@ -224,4 +263,5 @@ if file_pecas and file_servicos:
             exportar(df_final, formato)
         else:
             st.error("❌ Não foi possível processar os dados.")
-
+else:
+    st.info("📝 Faça upload dos arquivos PDF de peças e serviços para começar.")
