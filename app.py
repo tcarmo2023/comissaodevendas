@@ -4,6 +4,7 @@ from datetime import datetime
 import pdfplumber
 import re
 import io
+import os
 
 # ==============================
 # LISTA COMPLETA DE CONSULTORES
@@ -82,29 +83,6 @@ def normalizar_nome(nome):
     return None  # ignora se não achar
 
 
-def preprocess_text(text):
-    """ Junta linhas quebradas para evitar nomes cortados """
-    lines = text.splitlines()
-    fixed_lines = []
-    buffer = ""
-    for line in lines:
-        if buffer:
-            combined = buffer + " " + line
-            if re.search(r"\d", line):
-                fixed_lines.append(combined)
-                buffer = ""
-            else:
-                buffer = combined
-        else:
-            if re.search(r"\d", line):
-                fixed_lines.append(line)
-            else:
-                buffer = line
-    if buffer:
-        fixed_lines.append(buffer)
-    return "\n".join(fixed_lines)
-
-
 def extract_pecas_pdf(file):
     """Extrai dados do PDF de peças"""
     rows = []
@@ -115,7 +93,7 @@ def extract_pecas_pdf(file):
                 lines = text.split('\n')
                 for line in lines:
                     # Procura por padrão: Nome + R$ valor + % rentabilidade
-                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,]+", line)
+                    match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)\s*\%\s*[\d\-\,\.]+", line)
                     if match:
                         nome = normalizar_nome(match.group(1).strip())
                         if nome:
@@ -170,14 +148,11 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
     if df_servicos.empty:
         df_servicos = pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
 
-    # Merge dos dados
+    # Merge dos dados - outer join para pegar todos os consultores
     df = pd.merge(df_pecas, df_servicos, on="Consultor", how="outer").fillna(0)
 
-    # Garante colunas
-    if "Peças (R$)" not in df.columns:
-        df["Peças (R$)"] = 0.0
-    if "Serviços (R$)" not in df.columns:
-        df["Serviços (R$)"] = 0.0
+    # Remove linhas onde ambos os valores são zero (consultores sem vendas)
+    df = df[(df["Peças (R$)"] > 0) | (df["Serviços (R$)"] > 0)]
 
     # Calcula totais
     df["Total Geral (R$)"] = df["Peças (R$)"] + df["Serviços (R$)"]
@@ -185,18 +160,28 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
     df.insert(0, "Ano", ano)
     df.insert(1, "Mês", mes)
 
-    return df
+    return df.sort_values("Total Geral (R$)", ascending=False)
 
 
-def exportar(df, formato):
+def exportar(df, formato, filename):
     buf = io.BytesIO()
     if formato == "Excel":
         df.to_excel(buf, index=False, engine="openpyxl")
-        st.download_button("⬇️ Baixar Excel", buf.getvalue(), "comissao.xlsx",
+        st.download_button("⬇️ Baixar Excel", buf.getvalue(), filename,
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         buf.write(df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"))
-        st.download_button("⬇️ Baixar CSV", buf.getvalue(), "comissao.csv", mime="text/csv")
+        st.download_button("⬇️ Baixar CSV", buf.getvalue(), filename, mime="text/csv")
+
+
+def salvar_dados_setembro(df):
+    """Salva os dados de setembro em um arquivo consolidado"""
+    if not os.path.exists("dados_consolidados"):
+        os.makedirs("dados_consolidados")
+    
+    filename = f"dados_consolidados/consolidado_setembro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    df.to_excel(filename, index=False, engine="openpyxl")
+    return filename
 
 
 # ==============================
@@ -259,9 +244,30 @@ if file_pecas and file_servicos:
 
             # Exportação
             st.subheader("💾 Exportar")
-            formato = st.radio("Formato:", ["Excel", "CSV"], horizontal=True)
-            exportar(df_final, formato)
+            formato = st.radio("Formato:", ["Excel", "CSV"], horizontal=True, key="export_format")
+            
+            col_export1, col_export2 = st.columns(2)
+            with col_export1:
+                exportar(df_final, formato, f"comissao_{mes}_{ano}.{formato.lower()}")
+            
+            # Botão para salvar dados de setembro
+            if mes == "Setembro":
+                with col_export2:
+                    if st.button("💾 Salvar Dados Setembro", type="secondary"):
+                        filename = salvar_dados_setembro(df_final)
+                        st.success(f"✅ Dados de setembro salvos em: {filename}")
+                        st.info("📁 Os dados foram salvos na pasta 'dados_consolidados'")
+
         else:
-            st.error("❌ Não foi possível processar os dados.")
+            st.error("❌ Não foi possível processar os dados. Verifique se os PDFs têm o formato correto.")
 else:
     st.info("📝 Faça upload dos arquivos PDF de peças e serviços para começar.")
+
+# Informações de debug (opcional)
+if st.checkbox("🔍 Mostrar dados brutos extraídos (debug)"):
+    if file_pecas and file_servicos:
+        st.subheader("Dados Brutos - Peças")
+        st.dataframe(df_pecas if 'df_pecas' in locals() else "Não processado")
+        
+        st.subheader("Dados Brutos - Serviços")
+        st.dataframe(df_servicos if 'df_servicos' in locals() else "Não processado")
