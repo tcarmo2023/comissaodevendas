@@ -7,62 +7,45 @@ import io
 import os
 
 # ==============================
-# LISTA COMPLETA DE CONSULTORES (NOMES CANÔNICOS)
+# LISTA DOS VENDEDORES VÁLIDOS (APENAS OS QUE DEVEM SER CONSIDERADOS)
 # ==============================
-CONSULTORES_CANONICOS = {
-    "TIAGO FERNANDES DE LIMA": "TIAGO FERNANDES DE LIMA",
-    "TARCISIO TORRES DE ANDRADE": "TARCISIO TORRES DE ANDRADE", 
-    "MARCELO TELES RIBEIRO": "Marcelo Teles Ribeiro",
-    "ROSEANE CRUZ": "ROSEANE CRUZ",
-    "JOSEZITO SILVA": "JOSEZITO SILVA",
-    "NARDIE ARRUDA DA SILVA": "Nardie Arruda da Silva",
-    "ELIVALDO SALES SILVA": "Elivaldo Sales Silva",
-    "TARCIO HENRIQUE MARIANO DA SILVA": "TARCIO HENRIQUE MARIANO DA SILVA",
-    "DAVID MARTINS": "DAVID MARTINS",
-    "CAMILA AGUIAR": "Camila Aguiar",
-    "SERGIO CARVALHO": "Sergio Carvalho",
-    "FRANCISCO SEVERO SILVA": "Francisco Severo Silva",
-    "RENATO TAVARES": "RENATO TAVARES",
-    "ALINY BITENCOURT DOS REIS LIMA": "ALINY BITENCOURT DOS REIS LIMA",
-    "FLAVIO ROGERIO DE ALMEIDA BARBOSA": "Flavio Rogerio de Almeida Barbosa",
-    "BRUNA SILVA DE ASSIS": "BRUNA SILVA DE ASSIS",
-    "ANA LEYA LIMA ALVES FROTA": "Ana Leya Lima Alves Frota",
-    "FLÁVIA CAROLINA BARBOSA DA COSTA": "FLÁVIA CAROLINA BARBOSA DA COSTA",
-    "GIOVANA BRUNO DA SILVA": "GIOVANA BRUNO DA SILVA",  # Nome canônico para Giovana
-    "GIOVANA SILVA": "GIOVANA BRUNO DA SILVA",  # Mapeia para o nome canônico
-    "ISABELLE SOUZA": "Isabelle Souza",
-    "GRAZIELA SILVA DOS SANTOS GALDINO": "GRAZIELA SILVA DOS SANTOS GALDINO"
-}
+VENDEDORES_VALIDOS = [
+    "TIAGO FERNANDES DE LIMA",
+    "TARCISIO TORRES DE ANDRADE",
+    "Marcelo Teles Ribeiro",
+    "ROSEANE CRUZ",
+    "JOSEZITO SILVA",
+    "Nardie Arruda da Silva",
+    "Elivaldo Sales Silva",
+    "TARCIO HENRIQUE MARIANO DA SILVA",
+    "DAVID MARTINS",
+    "Camila Aguiar",
+    "Sergio Carvalho",
+    "Francisco Severo Silva",
+    "RENATO TAVARES",
+    "ALINY BITENCOURT DOS REIS LIMA",
+    "Flavio Rogerio de Almeida Barbosa"
+]
 
 # ==============================
-# MAPEAMENTO DE NOMES VARIANTES PARA CANÔNICOS
+# MAPEAMENTO DE PRIMEIRO+SEGUNDO NOME PARA NOME COMPLETO
 # ==============================
-NOMES_VARIANTES = {
-    "GIOVANA SILVA": "GIOVANA BRUNO DA SILVA",
-    "GIOVANA BRUNO": "GIOVANA BRUNO DA SILVA",
-    "GIOVANA BRUNO DA SILVA": "GIOVANA BRUNO DA SILVA",
-    "ALINY BITENCOURT": "ALINY BITENCOURT DOS REIS LIMA",
-    "ALINY BITENCOURT DOS REIS": "ALINY BITENCOURT DOS REIS LIMA",
-    "TARCIO HENRIQUE": "TARCIO HENRIQUE MARIANO DA SILVA",
-    "TARCIO MARIANO": "TARCIO HENRIQUE MARIANO DA SILVA",
-    "ELIVALDO SALES": "Elivaldo Sales Silva",
-    "RENATO TAVARES": "RENATO TAVARES",
-    "JOSEZITO SILVA": "JOSEZITO SILVA",
-    "DAVID MARTINS": "DAVID MARTINS",
+MAPEAMENTO_NOMES = {
     "TIAGO FERNANDES": "TIAGO FERNANDES DE LIMA",
     "TARCISIO TORRES": "TARCISIO TORRES DE ANDRADE",
     "MARCELO TELES": "Marcelo Teles Ribeiro",
     "ROSEANE CRUZ": "ROSEANE CRUZ",
+    "JOSEZITO SILVA": "JOSEZITO SILVA",
     "NARDIE ARRUDA": "Nardie Arruda da Silva",
+    "ELIVALDO SALES": "Elivaldo Sales Silva",
+    "TARCIO HENRIQUE": "TARCIO HENRIQUE MARIANO DA SILVA",
+    "DAVID MARTINS": "DAVID MARTINS",
+    "CAMILA AGUIAR": "Camila Aguiar",
+    "SERGIO CARVALHO": "Sergio Carvalho",
     "FRANCISCO SEVERO": "Francisco Severo Silva",
-    "CAMILA AGUIAR": "CAMILA AGUIAR",
-    "SERGIO CARVALHO": "SERGIO CARVALHO",
-    "FLAVIO ROGERIO": "Flavio Rogerio de Almeida Barbosa",
-    "BRUNA SILVA": "BRUNA SILVA DE ASSIS",
-    "ANA LEYA": "Ana Leya Lima Alves Frota",
-    "FLÁVIA CAROLINA": "FLÁVIA CAROLINA BARBOSA DA COSTA",
-    "ISABELLE SOUZA": "Isabelle Souza",
-    "GRAZIELA SILVA": "GRAZIELA SILVA DOS SANTOS GALDINO"
+    "RENATO TAVARES": "RENATO TAVARES",
+    "ALINY BITENCOURT": "ALINY BITENCOURT DOS REIS LIMA",
+    "FLAVIO ROGERIO": "Flavio Rogerio de Almeida Barbosa"
 }
 
 # ==============================
@@ -71,23 +54,17 @@ NOMES_VARIANTES = {
 def normalizar_nome(nome):
     nome_upper = nome.upper().strip()
     
-    # 1 - Verifica se é um nome variante conhecido
-    for variante, canonico in NOMES_VARIANTES.items():
-        if variante in nome_upper:
-            return CONSULTORES_CANONICOS.get(canonico, canonico)
-    
-    # 2 - Tenta batida exata com nomes canônicos
-    for chave, correto in CONSULTORES_CANONICOS.items():
-        if chave in nome_upper:
-            return correto
-    
-    # 3 - Tenta por primeiro + segundo nome
+    # 1 - Tenta encontrar pelo mapeamento de primeiro+segundo nome
     partes = nome_upper.split()
     if len(partes) >= 2:
         chave = f"{partes[0]} {partes[1]}"
-        if chave in NOMES_VARIANTES:
-            canonico = NOMES_VARIANTES[chave]
-            return CONSULTORES_CANONICOS.get(canonico, canonico)
+        if chave in MAPEAMENTO_NOMES:
+            return MAPEAMENTO_NOMES[chave]
+    
+    # 2 - Tenta encontrar nome exato na lista de vendedores válidos
+    for vendedor in VENDEDORES_VALIDOS:
+        if vendedor.upper() in nome_upper or nome_upper in vendedor.upper():
+            return vendedor
     
     return None
 
@@ -100,29 +77,17 @@ def extract_pecas_pdf(file):
             if text:
                 lines = text.split('\n')
                 for line in lines:
-                    # Padrão mais flexível para peças
+                    # Padrão para peças: Nome + R$ valor + % rentabilidade
                     match = re.search(r"(.+?)\s+R\$\s*([\d\.\,]+)(?:\s*\%\s*[\d\-\,\.]+)?", line)
                     if match:
                         nome = normalizar_nome(match.group(1).strip())
-                        if nome:
+                        if nome and nome in VENDEDORES_VALIDOS:  # Só adiciona se for vendedor válido
                             valor = match.group(2).replace(".", "").replace(",", ".")
                             try:
                                 valor = float(valor)
                                 rows.append({"Consultor": nome, "Peças (R$)": valor})
                             except:
                                 continue
-                    # Tenta padrão alternativo sem o símbolo R$
-                    else:
-                        match = re.search(r"(.+?)\s+([\d\.\,]+)\s+\%", line)
-                        if match:
-                            nome = normalizar_nome(match.group(1).strip())
-                            if nome:
-                                valor = match.group(2).replace(".", "").replace(",", ".")
-                                try:
-                                    valor = float(valor)
-                                    rows.append({"Consultor": nome, "Peças (R$)": valor})
-                                except:
-                                    continue
     
     if rows:
         df = pd.DataFrame(rows)
@@ -140,11 +105,11 @@ def extract_servicos_pdf(file):
             if text:
                 lines = text.split('\n')
                 for line in lines:
-                    # Padrão mais flexível para serviços
+                    # Padrão para serviços: Nome + valor numérico + quantidade
                     match = re.search(r"(.+?)\s+([\d\.\,]+)(?:\s+\d+)?", line)
                     if match:
                         nome = normalizar_nome(match.group(1).strip())
-                        if nome:
+                        if nome and nome in VENDEDORES_VALIDOS:  # Só adiciona se for vendedor válido
                             valor = match.group(2).replace(".", "").replace(",", ".")
                             try:
                                 valor = float(valor)
@@ -161,24 +126,28 @@ def extract_servicos_pdf(file):
     return pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
 
 def processar_dados(df_pecas, df_servicos, ano, mes):
-    # Garante que as tabelas existam
+    # Cria DataFrames vazios com todos os vendedores válidos
+    todos_vendedores = pd.DataFrame({"Consultor": VENDEDORES_VALIDOS})
+    
+    # Garante que as tabelas tenham a coluna Consultor
     if df_pecas.empty:
         df_pecas = pd.DataFrame(columns=["Consultor", "Peças (R$)"])
     if df_servicos.empty:
         df_servicos = pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
-
-    # Merge dos dados - outer join para pegar todos os consultores
-    df = pd.merge(df_pecas, df_servicos, on="Consultor", how="outer").fillna(0)
-
-    # Remove linhas onde ambos os valores são zero (consultores sem vendas)
-    df = df[(df["Peças (R$)"] > 0) | (df["Serviços (R$)"] > 0)]
-
+    
+    # Merge com todos os vendedores para garantir que apareçam todos
+    df_pecas_completo = pd.merge(todos_vendedores, df_pecas, on="Consultor", how="left").fillna(0)
+    df_servicos_completo = pd.merge(todos_vendedores, df_servicos, on="Consultor", how="left").fillna(0)
+    
+    # Junta peças e serviços
+    df = pd.merge(df_pecas_completo, df_servicos_completo, on="Consultor", how="outer").fillna(0)
+    
     # Calcula totais
     df["Total Geral (R$)"] = df["Peças (R$)"] + df["Serviços (R$)"]
     df["Comissão (R$)"] = df["Total Geral (R$)"] * 0.01
     df.insert(0, "Ano", ano)
     df.insert(1, "Mês", mes)
-
+    
     return df.sort_values("Total Geral (R$)", ascending=False)
 
 def exportar(df, formato, filename):
@@ -278,12 +247,3 @@ if file_pecas and file_servicos:
             st.error("❌ Não foi possível processar os dados. Verifique se os PDFs têm o formato correto.")
 else:
     st.info("📝 Faça upload dos arquivos PDF de peças e serviços para começar.")
-
-# Informações de debug (opcional)
-if st.checkbox("🔍 Mostrar dados brutos extraídos (debug)"):
-    if file_pecas and file_servicos:
-        st.subheader("Dados Brutos - Peças")
-        st.dataframe(df_pecas if 'df_pecas' in locals() else "Não processado")
-        
-        st.subheader("Dados Brutos - Serviços")
-        st.dataframe(df_servicos if 'df_servicos' in locals() else "Não processado")
