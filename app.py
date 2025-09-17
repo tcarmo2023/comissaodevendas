@@ -98,7 +98,7 @@ def extract_custom_pdf(file, coluna_valor):
         text = preprocess_text(text)
 
         for line in text.splitlines():
-            # ✅ Regex ajustado: captura apenas valores precedidos de R$ (ignora % e outras colunas)
+            # Regex ajustado: Nome + R$ valor (somente segunda coluna)
             match = re.search(r"(.+?)\s+R\$\s?([\d\.\,]+)", line)
             if match:
                 nome = normalizar_nome(match.group(1))
@@ -113,29 +113,42 @@ def extract_custom_pdf(file, coluna_valor):
 
     if rows:
         df = pd.DataFrame(rows)
+        # Garante que não haverá duplicados (soma caso o nome se repita no PDF)
+        df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
+        return df
+
+    # Se não achar nada, devolve um DF vazio já com a coluna esperada
+    return pd.DataFrame(columns=["Consultor", coluna_valor])
+
+    if rows:
+        df = pd.DataFrame(rows)
         df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
         return df
     return pd.DataFrame(columns=["Consultor", coluna_valor])
 
 
 def processar_dados(df_pecas, df_servicos, ano, mes):
+    # Garante que as tabelas existam
     if df_pecas.empty:
         df_pecas = pd.DataFrame(columns=["Consultor", "Peças (R$)"])
     if df_servicos.empty:
         df_servicos = pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
 
-    df_pecas = df_pecas.groupby("Consultor", as_index=False).sum(numeric_only=True)
-    df_servicos = df_servicos.groupby("Consultor", as_index=False).sum(numeric_only=True)
-
     df = pd.merge(df_pecas, df_servicos, on="Consultor", how="outer").fillna(0)
-    df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
 
+    # Garante colunas
+    if "Peças (R$)" not in df.columns:
+        df["Peças (R$)"] = 0.0
+    if "Serviços (R$)" not in df.columns:
+        df["Serviços (R$)"] = 0.0
+
+    # Calcula totais
     df["Total Geral (R$)"] = df["Peças (R$)"] + df["Serviços (R$)"]
     df["Comissão (R$)"] = df["Total Geral (R$)"] * 0.01
     df.insert(0, "Ano", ano)
     df.insert(1, "Mês", mes)
-    return df
 
+    return df
 
 def exportar(df, formato):
     buf = io.BytesIO()
@@ -211,3 +224,4 @@ if file_pecas and file_servicos:
             exportar(df_final, formato)
         else:
             st.error("❌ Não foi possível processar os dados.")
+
