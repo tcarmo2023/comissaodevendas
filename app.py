@@ -5,6 +5,8 @@ import io
 import tempfile
 import os
 import traceback
+import re
+import fitz  # PyMuPDF para ler texto dos PDFs
 
 # ---------------- PREVENÇÃO DE ERROS ----------------
 try:
@@ -23,13 +25,6 @@ except Exception:
     st.sidebar.info("ℹ️ Modo local - Secrets não disponíveis")
 
 # Dependências opcionais
-try:
-    import camelot
-    CAMELOT_DISPONIVEL = True
-except ImportError:
-    CAMELOT_DISPONIVEL = False
-    st.sidebar.warning("⚠️ Camelot não instalado (PDF não será processado)")
-
 try:
     import gspread
     from google.oauth2.service_account import Credentials
@@ -58,62 +53,62 @@ def get_google_client():
     except:
         return None
 
-# ---------------- FUNÇÕES ----------------
-def extract_file(file_obj, coluna_valor):
-    """Extrai Nome + Valor de PDF/Excel/CSV"""
+# ---------------- EXTRAÇÃO PDF ----------------
+def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
+    """
+    Extrai nomes e valores dos PDFs fornecidos (Peças e Serviços)
+    tipo = "pecas" ou "servicos"
+    """
+    dados = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        if tipo == "pecas":
+            # Exemplo: "% 33,37R$ 273.149,56TIAGO FERNANDES DE LIMA"
+            m = re.search(r"R\$ ?([\d\.\,]+)\s*([A-ZÇÉÊÁÍÓÚÃÕa-zçéêáíóúãõ\s]+)$", line)
+        else:
+            # Exemplo: "2099.533,70TIAGO FERNANDES DE LIMA"
+            m = re.search(r"([\d\.\,]+)\s*([A-ZÇÉÊÁÍÓÚÃÕa-zçéêáíóúãõ\s]+)$", line)
+
+        if m:
+            valor = m.group(1).replace(".", "").replace(",", ".")
+            try:
+                valor = float(valor)
+            except:
+                continue
+            nome = m.group(2).strip()
+            dados.append({"Consultor": nome, coluna_valor: valor})
+
+    df = pd.DataFrame(dados)
+    if not df.empty:
+        df = df.groupby("Consultor", as_index=False).sum()
+    return df
+
+def extract_file(file_obj, coluna_valor, tipo="pecas"):
+    """Detecta tipo e chama o parser certo"""
     if file_obj.name.endswith(".pdf"):
-        return extract_pdf(file_obj, coluna_valor)
+        # Extrair texto cru com PyMuPDF
+        file_obj.seek(0)
+        with fitz.open(stream=file_obj.read(), filetype="pdf") as doc:
+            text = ""
+            for page in doc:
+                text += page.get_text("text")
+        return extract_custom_pdf(text, coluna_valor, tipo)
     elif file_obj.name.endswith((".xls", ".xlsx")):
-        return pd.read_excel(file_obj).rename(
-            columns={list(pd.read_excel(file_obj).columns)[0]: "Consultor",
-                     list(pd.read_excel(file_obj).columns)[1]: coluna_valor}
-        )
+        df = pd.read_excel(file_obj)
+        df = df.rename(columns={df.columns[0]: "Consultor", df.columns[1]: coluna_valor})
+        return df
     elif file_obj.name.endswith(".csv"):
-        return pd.read_csv(file_obj).rename(
-            columns={list(pd.read_csv(file_obj).columns)[0]: "Consultor",
-                     list(pd.read_csv(file_obj).columns)[1]: coluna_valor}
-        )
+        df = pd.read_csv(file_obj)
+        df = df.rename(columns={df.columns[0]: "Consultor", df.columns[1]: coluna_valor})
+        return df
     else:
         st.error(f"Formato não suportado: {file_obj.name}")
         return pd.DataFrame(columns=["Consultor", coluna_valor])
 
-def extract_pdf(file_obj, coluna_valor):
-    """Extrai tabelas de um PDF e retorna DataFrame formatado"""
-    if not CAMELOT_DISPONIVEL:
-        return pd.DataFrame(columns=["Consultor", coluna_valor])
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(file_obj.getvalue())
-            tmp_file_path = tmp_file.name
-
-        tables = camelot.read_pdf(tmp_file_path, pages="all", flavor="stream")
-        if len(tables) == 0:
-            return pd.DataFrame(columns=["Consultor", coluna_valor])
-
-        df_list = []
-        for t in tables:
-            df = t.df.copy()
-            if len(df.columns) >= 2:
-                df = df.rename(columns={df.columns[0]: "Consultor", df.columns[1]: coluna_valor})
-                df_list.append(df)
-
-        if df_list:
-            final_df = pd.concat(df_list, ignore_index=True)
-            final_df[coluna_valor] = pd.to_numeric(
-                final_df[coluna_valor].astype(str).str.replace(r"[^\d,]", "", regex=True).str.replace(",", "."),
-                errors="coerce"
-            )
-            final_df = final_df.dropna(subset=[coluna_valor])
-            return final_df
-        return pd.DataFrame(columns=["Consultor", coluna_valor])
-    except Exception as e:
-        st.error(f"Erro ao processar PDF: {str(e)}")
-        st.sidebar.error(f"Traceback: {traceback.format_exc()}")
-        return pd.DataFrame(columns=["Consultor", coluna_valor])
-    finally:
-        if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
-            os.unlink(tmp_file_path)
-
+# ---------------- PROCESSAMENTO ----------------
 def processar_dados(df_pecas, df_servicos, ano, mes):
     """Une peças + serviços e calcula comissão"""
     if df_pecas.empty:
@@ -129,6 +124,7 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
     df = df.sort_values("Total Geral (R$)", ascending=False)
     return df
 
+# ---------------- SALVAR ----------------
 def salvar_google_sheets(df):
     """Salva dados no Google Sheets (se disponível)"""
     if not GOOGLE_SHEETS_DISPONIVEL:
@@ -167,6 +163,7 @@ def salvar_localmente(df):
     except:
         return False
 
+# ---------------- EXPORTAR ----------------
 def exportar(df, formato):
     """Exporta dados"""
     try:
@@ -210,8 +207,8 @@ with col4:
 if file_pecas and file_servicos:
     if st.button("🚀 Processar Arquivos", type="primary", key="processar_btn"):
         with st.spinner("Processando..."):
-            df_pecas = extract_file(file_pecas, "Peças (R$)")
-            df_servicos = extract_file(file_servicos, "Serviços (R$)")
+            df_pecas = extract_file(file_pecas, "Peças (R$)", tipo="pecas")
+            df_servicos = extract_file(file_servicos, "Serviços (R$)", tipo="servicos")
             df_final = processar_dados(df_pecas, df_servicos, ano, mes)
 
         if not df_final.empty:
