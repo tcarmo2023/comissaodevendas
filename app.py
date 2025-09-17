@@ -6,7 +6,7 @@ import re
 import io
 
 # ==============================
-# LISTA DE CONSULTORES VÁLIDOS
+# LISTA COMPLETA DE CONSULTORES
 # ==============================
 CONSULTORES_VALIDOS = {
     "TIAGO FERNANDES DE LIMA": "TIAGO FERNANDES DE LIMA",
@@ -27,24 +27,24 @@ CONSULTORES_VALIDOS = {
 }
 
 # ==============================
-# CHAVES (NOME + SOBRENOME)
+# CHAVES: PRIMEIRO + SEGUNDO NOME
 # ==============================
 CONSULTORES_CHAVES = {
-    ("ALINY", "LIMA"): "ALINY BITENCOURT DOS REIS LIMA",
-    ("TARCIO", "MARIANO"): "TARCIO HENRIQUE MARIANO DA SILVA",
-    ("ELIVALDO", "SALES"): "Elivaldo Sales Silva",
-    ("RENATO", "TAVARES"): "RENATO TAVARES",
-    ("JOSEZITO", "SILVA"): "JOSEZITO SILVA",
-    ("DAVID", "MARTINS"): "DAVID MARTINS",
-    ("TIAGO", "FERNANDES"): "TIAGO FERNANDES DE LIMA",
-    ("TARCISIO", "ANDRADE"): "TARCISIO TORRES DE ANDRADE",
-    ("MARCELO", "RIBEIRO"): "Marcelo Teles Ribeiro",
-    ("ROSEANE", "CRUZ"): "ROSEANE CRUZ",
-    ("NARDIE", "ARRUDA"): "Nardie Arruda da Silva",
-    ("FRANCISCO", "SEVERO"): "Francisco Severo Silva",
-    ("CAMILA", "AGUIAR"): "Camila Aguiar",
-    ("SERGIO", "CARVALHO"): "Sergio Carvalho",
-    ("FLAVIO", "BARBOSA"): "Flavio Rogerio de Almeida Barbosa",
+    "ALINY BITENCOURT": "ALINY BITENCOURT DOS REIS LIMA",
+    "TARCIO HENRIQUE": "TARCIO HENRIQUE MARIANO DA SILVA",
+    "ELIVALDO SALES": "Elivaldo Sales Silva",
+    "RENATO TAVARES": "RENATO TAVARES",
+    "JOSEZITO SILVA": "JOSEZITO SILVA",
+    "DAVID MARTINS": "DAVID MARTINS",
+    "TIAGO FERNANDES": "TIAGO FERNANDES DE LIMA",
+    "TARCISIO TORRES": "TARCISIO TORRES DE ANDRADE",
+    "MARCELO TELES": "Marcelo Teles Ribeiro",
+    "ROSEANE CRUZ": "ROSEANE CRUZ",
+    "NARDIE ARRUDA": "Nardie Arruda da Silva",
+    "FRANCISCO SEVERO": "Francisco Severo Silva",
+    "CAMILA AGUIAR": "CAMILA AGUIAR",
+    "SERGIO CARVALHO": "SERGIO CARVALHO",
+    "FLAVIO ROGERIO": "Flavio Rogerio de Almeida Barbosa",
 }
 
 # ==============================
@@ -58,12 +58,14 @@ def normalizar_nome(nome):
         if chave in nome_upper:
             return correto
 
-    # 2 - tenta batida parcial com chaves
-    for (parte1, parte2), correto in CONSULTORES_CHAVES.items():
-        if parte1 in nome_upper and parte2 in nome_upper:
-            return correto
+    # 2 - tenta batida por primeiro + segundo nome
+    partes = nome_upper.split()
+    if len(partes) >= 2:
+        chave = f"{partes[0]} {partes[1]}"
+        if chave in CONSULTORES_CHAVES:
+            return CONSULTORES_CHAVES[chave]
 
-    return None  # ❌ ignora se não achar
+    return None  # ignora se não achar
 
 
 def preprocess_text(text):
