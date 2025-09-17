@@ -7,6 +7,25 @@ import os
 import time
 import traceback
 
+# ---------------- SOLUÇÃO PARA O BUG DO STREAMLIT ----------------
+# Previne o erro de "removeChild" (bug do Streamlit)
+st.markdown('''
+    <style>
+        div[data-testid="stToolbar"] { 
+            display: none !important; 
+        }
+        .stDeployButton { 
+            display: none !important; 
+        }
+        #MainMenu { 
+            visibility: hidden !important; 
+        }
+        footer { 
+            visibility: hidden !important; 
+        }
+    </style>
+''', unsafe_allow_html=True)
+
 # ---------------- PREVENÇÃO DE ERROS ----------------
 try:
     st.set_page_config(page_title="Comissão de Vendas", layout="wide")
@@ -118,7 +137,6 @@ def extract_pdf(file_obj, coluna_valor):
                 df = df.replace('', pd.NA).dropna(how='all')
                 
                 # Tenta identificar automaticamente as colunas
-                # Supõe que a primeira coluna é o consultor e a segunda é o valor
                 consultor_col = 0
                 valor_col = 1
                 
@@ -127,8 +145,8 @@ def extract_pdf(file_obj, coluna_valor):
                     sample_values = df.iloc[1:min(6, len(df)), valor_col].astype(str).str.replace(r'[R$\.,\s]', '', regex=True)
                     numeric_count = sample_values.str.isnumeric().sum()
                     
-                    if numeric_count < 2:  # Se não tem muitos números, tenta outra coluna
-                        for col_idx in range(2, min(6, len(df.columns))):  # Verifica até 5 colunas
+                    if numeric_count < 2:
+                        for col_idx in range(2, min(6, len(df.columns))):
                             sample_values = df.iloc[1:min(6, len(df)), col_idx].astype(str).str.replace(r'[R$\.,\s]', '', regex=True)
                             if sample_values.str.isnumeric().sum() >= 2:
                                 valor_col = col_idx
@@ -136,7 +154,7 @@ def extract_pdf(file_obj, coluna_valor):
                 
                 # Remove cabeçalhos se necessário
                 if len(df) > 0 and df.iloc[0, valor_col].astype(str).replace(' ', '').replace('.', '').isalpha():
-                    df = df[1:]  # Remove primeira linha se for cabeçalho
+                    df = df[1:]
                 
                 # Renomeia colunas
                 df = df.rename(columns={
@@ -152,7 +170,7 @@ def extract_pdf(file_obj, coluna_valor):
                     df[coluna_valor]
                     .astype(str)
                     .str.strip()
-                    .str.replace(r'[^\d,]', '', regex=True)  # Mantém apenas números e vírgula
+                    .str.replace(r'[^\d,]', '', regex=True)
                     .str.replace(',', '.')
                     .replace('', '0')
                 )
