@@ -5,6 +5,7 @@ import io
 import tempfile
 import os
 import time
+import traceback
 
 # ---------------- PREVENÇÃO DE ERROS ----------------
 try:
@@ -66,6 +67,16 @@ SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1h3Okp_0aQvafltjoBbt6F
 ABA = "Comissao"
 
 # ---------------- FUNÇÕES ----------------
+def debug_tabela(df, nome="Tabela"):
+    """Função para debug de tabelas"""
+    st.sidebar.subheader(f"🔍 {nome}")
+    st.sidebar.write(f"Shape: {df.shape}")
+    st.sidebar.write("Primeiras linhas:")
+    st.sidebar.dataframe(df.head(3))
+    st.sidebar.write("Colunas:")
+    for i, col in enumerate(df.columns):
+        st.sidebar.write(f"{i}: {col} - Amostra: {df[col].iloc[0] if len(df) > 0 else 'N/A'}")
+
 def extract_pdf(file_obj, coluna_valor):
     """Extrai tabelas de um PDF e retorna DataFrame formatado"""
     if not CAMELOT_DISPONIVEL:
@@ -78,43 +89,102 @@ def extract_pdf(file_obj, coluna_valor):
             tmp_file.write(file_obj.getvalue())
             tmp_file_path = tmp_file.name
         
-        tables = camelot.read_pdf(tmp_file_path, pages="all", flavor="stream")
+        # Tenta extrair tabelas com diferentes configurações
+        try:
+            tables = camelot.read_pdf(tmp_file_path, pages="all", flavor="stream")
+        except:
+            tables = camelot.read_pdf(tmp_file_path, pages="all", flavor="lattice")
         
         if len(tables) == 0:
+            st.warning("Nenhuma tabela encontrada no PDF.")
             return pd.DataFrame(columns=["Consultor", coluna_valor])
         
         df_list = []
-        for t in tables:
-            df = t.df
-            if len(df.columns) < 2:
+        for i, t in enumerate(tables):
+            df = t.df.copy()
+            
+            # Debug: mostra a tabela crua
+            st.sidebar.write(f"📄 Tabela {i+1} (crua):")
+            st.sidebar.dataframe(df.head(3))
+            
+            # Pula tabelas muito pequenas
+            if len(df.columns) < 2 or len(df) < 2:
+                st.sidebar.write(f"⏩ Tabela {i+1} ignorada (muito pequena)")
+                continue
+            
+            # Tenta encontrar a coluna de valores
+            try:
+                # Remove linhas completamente vazias
+                df = df.replace('', pd.NA).dropna(how='all')
+                
+                # Tenta identificar automaticamente as colunas
+                # Supõe que a primeira coluna é o consultor e a segunda é o valor
+                consultor_col = 0
+                valor_col = 1
+                
+                # Verifica se a segunda coluna contém valores numéricos
+                if len(df) > 1:
+                    sample_values = df.iloc[1:min(6, len(df)), valor_col].astype(str).str.replace(r'[R$\.,\s]', '', regex=True)
+                    numeric_count = sample_values.str.isnumeric().sum()
+                    
+                    if numeric_count < 2:  # Se não tem muitos números, tenta outra coluna
+                        for col_idx in range(2, min(6, len(df.columns))):  # Verifica até 5 colunas
+                            sample_values = df.iloc[1:min(6, len(df)), col_idx].astype(str).str.replace(r'[R$\.,\s]', '', regex=True)
+                            if sample_values.str.isnumeric().sum() >= 2:
+                                valor_col = col_idx
+                                break
+                
+                # Remove cabeçalhos se necessário
+                if len(df) > 0 and df.iloc[0, valor_col].astype(str).replace(' ', '').replace('.', '').isalpha():
+                    df = df[1:]  # Remove primeira linha se for cabeçalho
+                
+                # Renomeia colunas
+                df = df.rename(columns={
+                    df.columns[consultor_col]: "Consultor",
+                    df.columns[valor_col]: coluna_valor
+                })
+                
+                # Mantém apenas as colunas necessárias
+                df = df[["Consultor", coluna_valor]].copy()
+                
+                # Limpa valores monetários
+                df[coluna_valor] = (
+                    df[coluna_valor]
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(r'[^\d,]', '', regex=True)  # Mantém apenas números e vírgula
+                    .str.replace(',', '.')
+                    .replace('', '0')
+                )
+                
+                # Converte para float, ignorando erros
+                df[coluna_valor] = pd.to_numeric(df[coluna_valor], errors='coerce')
+                
+                # Remove linhas com valores inválidos
+                df = df.dropna(subset=[coluna_valor])
+                df = df[df[coluna_valor] > 0]
+                
+                if not df.empty:
+                    df_list.append(df)
+                    st.sidebar.success(f"✅ Tabela {i+1} processada: {len(df)} registros")
+                else:
+                    st.sidebar.warning(f"⚠️ Tabela {i+1} sem valores válidos")
+                    
+            except Exception as e:
+                st.sidebar.error(f"❌ Erro na tabela {i+1}: {str(e)}")
                 continue
                 
-            df.columns = df.iloc[0]
-            df = df[1:]
-            df = df.rename(columns={df.columns[0]: "Consultor", df.columns[1]: coluna_valor})
-            
-            # Limpa valores monetários
-            df[coluna_valor] = (
-                df[coluna_valor]
-                .astype(str)
-                .str.replace(r"[R$\s\.]", "", regex=True)
-                .str.replace(",", ".")
-                .replace("", "0")
-                .astype(float)
-            )
-            
-            df = df[df[coluna_valor] > 0]
-            
-            if not df.empty:
-                df_list.append(df)
-                
         if not df_list:
+            st.error("Nenhum dado válido encontrado nos PDFs.")
             return pd.DataFrame(columns=["Consultor", coluna_valor])
             
-        return pd.concat(df_list, ignore_index=True)
+        final_df = pd.concat(df_list, ignore_index=True)
+        st.sidebar.success(f"📊 Total: {len(final_df)} registros extraídos")
+        return final_df
         
     except Exception as e:
         st.error(f"Erro ao processar PDF: {str(e)}")
+        st.sidebar.error(f"Traceback: {traceback.format_exc()}")
         return pd.DataFrame(columns=["Consultor", coluna_valor])
         
     finally:
@@ -244,8 +314,19 @@ st.markdown("---")
 if file_pecas and file_servicos:
     if st.button("🚀 Processar Arquivos", type="primary"):
         with st.spinner("Processando..."):
+            # Debug dos arquivos
+            st.sidebar.subheader("📁 Arquivos carregados")
+            st.sidebar.write(f"Peças: {file_pecas.name} ({file_pecas.size} bytes)")
+            st.sidebar.write(f"Serviços: {file_servicos.name} ({file_servicos.size} bytes)")
+            
+            # Processa com debug
             df_pecas = extract_pdf(file_pecas, "Peças (R$)")
             df_servicos = extract_pdf(file_servicos, "Serviços (R$)")
+            
+            # Debug das tabelas extraídas
+            debug_tabela(df_pecas, "Peças Extraídas")
+            debug_tabela(df_servicos, "Serviços Extraídos")
+            
             df_final = processar_dados(df_pecas, df_servicos, ano, mes)
         
         if not df_final.empty:
