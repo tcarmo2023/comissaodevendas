@@ -58,7 +58,13 @@ def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
             except:
                 valor = 0.0
             rows.append({"Consultor": nome, coluna_valor: valor})
-    return pd.DataFrame(rows)
+
+    # 🔄 Agrupa valores duplicados dentro do mesmo PDF
+    if rows:
+        df = pd.DataFrame(rows)
+        df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
+        return df
+    return pd.DataFrame(columns=["Consultor", coluna_valor])
 
 def extract_file(file_obj, coluna_valor, tipo="pecas"):
     if file_obj.name.endswith(".pdf") and PDFPLUMBER_OK:
@@ -76,11 +82,15 @@ def extract_file(file_obj, coluna_valor, tipo="pecas"):
     elif file_obj.name.endswith((".xlsx", ".xls")):
         df = pd.read_excel(file_obj)
         df["Consultor"] = df["Consultor"].apply(normalizar_nome)
-        return df.dropna(subset=["Consultor"])[["Consultor", coluna_valor]]
+        df = df.dropna(subset=["Consultor"])
+        df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
+        return df[["Consultor", coluna_valor]]
     elif file_obj.name.endswith(".csv"):
         df = pd.read_csv(file_obj)
         df["Consultor"] = df["Consultor"].apply(normalizar_nome)
-        return df.dropna(subset=["Consultor"])[["Consultor", coluna_valor]]
+        df = df.dropna(subset=["Consultor"])
+        df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
+        return df[["Consultor", coluna_valor]]
     else:
         return pd.DataFrame(columns=["Consultor", coluna_valor])
 
@@ -91,7 +101,15 @@ def processar_dados(df_pecas, df_servicos, ano, mes):
     if df_servicos.empty:
         df_servicos = pd.DataFrame(columns=["Consultor", "Serviços (R$)"])
 
+    # 🔄 Garante que duplicados dentro de cada tabela foram somados
+    df_pecas = df_pecas.groupby("Consultor", as_index=False).sum(numeric_only=True)
+    df_servicos = df_servicos.groupby("Consultor", as_index=False).sum(numeric_only=True)
+
+    # 🔄 Junta peças + serviços e soma novamente se houver duplicados
     df = pd.merge(df_pecas, df_servicos, on="Consultor", how="outer").fillna(0)
+    df = df.groupby("Consultor", as_index=False).sum(numeric_only=True)
+
+    # Calcula totais e comissão
     df["Total Geral (R$)"] = df["Peças (R$)"] + df["Serviços (R$)"]
     df["Comissão (R$)"] = df["Total Geral (R$)"] * 0.01
     df.insert(0, "Ano", ano)
