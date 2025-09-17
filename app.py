@@ -2,11 +2,10 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import io
-import tempfile
 import os
 import traceback
 import re
-import fitz  # PyMuPDF para ler texto dos PDFs
+import pdfplumber  # <-- usado para extrair texto dos PDFs
 
 # ---------------- PREVENÇÃO DE ERROS ----------------
 try:
@@ -89,21 +88,28 @@ def extract_custom_pdf(text, coluna_valor, tipo="pecas"):
 def extract_file(file_obj, coluna_valor, tipo="pecas"):
     """Detecta tipo e chama o parser certo"""
     if file_obj.name.endswith(".pdf"):
-        # Extrair texto cru com PyMuPDF
+        text = ""
         file_obj.seek(0)
-        with fitz.open(stream=file_obj.read(), filetype="pdf") as doc:
-            text = ""
-            for page in doc:
-                text += page.get_text("text")
+        with pdfplumber.open(file_obj) as pdf:
+            for page in pdf.pages:
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                except:
+                    continue
         return extract_custom_pdf(text, coluna_valor, tipo)
+
     elif file_obj.name.endswith((".xls", ".xlsx")):
         df = pd.read_excel(file_obj)
         df = df.rename(columns={df.columns[0]: "Consultor", df.columns[1]: coluna_valor})
         return df
+
     elif file_obj.name.endswith(".csv"):
         df = pd.read_csv(file_obj)
         df = df.rename(columns={df.columns[0]: "Consultor", df.columns[1]: coluna_valor})
         return df
+
     else:
         st.error(f"Formato não suportado: {file_obj.name}")
         return pd.DataFrame(columns=["Consultor", coluna_valor])
