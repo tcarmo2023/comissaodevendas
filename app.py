@@ -24,9 +24,14 @@ VENDEDORES_VALIDOS = [
     "Francisco Severo Silva",
     "RENATO TAVARES",
     "ALINY BITENCOURT DOS REIS LIMA",
-    "Flavio Rogerio de Almeida Barbosa"
+    "Flavio Rogerio de Almeida Barbosa",
+    # APENAS OS 3 CONSULTORES QUE FALTAVAM
+    "FRANCISCO DE ASSIS DE OLIVEIRA SILVA",
+    "IARA CARNEIRO LIMA", 
+    "RONIELITON LIMA PINHEIRO"
 ]
 
+# MAPEAMENTO APENAS PELAS DUAS PRIMEIRAS PALAVRAS
 MAPEAMENTO_NOMES = {
     "TIAGO FERNANDES": "TIAGO FERNANDES DE LIMA",
     "TARCISIO TORRES": "TARCISIO TORRES DE ANDRADE",
@@ -42,23 +47,36 @@ MAPEAMENTO_NOMES = {
     "FRANCISCO SEVERO": "Francisco Severo Silva",
     "RENATO TAVARES": "RENATO TAVARES",
     "ALINY BITENCOURT": "ALINY BITENCOURT DOS REIS LIMA",
-    "FLAVIO ROGERIO": "Flavio Rogerio de Almeida Barbosa"
+    "FLAVIO ROGERIO": "Flavio Rogerio de Almeida Barbosa",
+    # APENAS PELAS DUAS PRIMEIRAS PALAVRAS
+    "FRANCISCO DE": "FRANCISCO DE ASSIS DE OLIVEIRA SILVA",
+    "IARA CARNEIRO": "IARA CARNEIRO LIMA",
+    "RONIELITON LIMA": "RONIELITON LIMA PINHEIRO",
 }
 
 def normalizar_nome(nome):
     nome_upper = nome.upper().strip()
     partes = nome_upper.split()
+    
+    # Pega apenas as duas primeiras palavras
     if len(partes) >= 2:
         chave = f"{partes[0]} {partes[1]}"
         if chave in MAPEAMENTO_NOMES:
             return MAPEAMENTO_NOMES[chave]
+    
+    # Busca nos vendedores válidos
     for vendedor in VENDEDORES_VALIDOS:
-        if vendedor.upper() in nome_upper or nome_upper in vendedor.upper():
-            return vendedor
+        vendedor_upper = vendedor.upper()
+        # Verifica se as duas primeiras palavras batem
+        partes_vendedor = vendedor_upper.split()
+        if len(partes_vendedor) >= 2 and len(partes) >= 2:
+            if partes_vendedor[0] == partes[0] and partes_vendedor[1] == partes[1]:
+                return vendedor
+    
     return None
 
 def extract_pecas_pdf(file):
-    """Extrai dados do PDF de peças com limpeza avançada de caracteres"""
+    """Extrai dados do PDF de peças"""
     rows = []
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
@@ -81,7 +99,7 @@ def extract_pecas_pdf(file):
                             nome = normalizar_nome(match.group(1).strip())
                             if nome and nome in VENDEDORES_VALIDOS:
                                 valor_bruto = match.group(2)
-                                # 🔧 Limpeza agressiva: remove tudo que não for número, ponto ou vírgula
+                                # Limpeza do valor
                                 valor_limpo = re.sub(r"[^0-9\.,]", "", valor_bruto)
                                 valor_str = valor_limpo.replace(".", "").replace(",", ".")
                                 try:
